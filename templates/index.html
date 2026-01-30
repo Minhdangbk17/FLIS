@@ -1,0 +1,555 @@
+{% extends 'base.html' %}
+{% block title %}Kiểm tra Vải - Máy {{ state.machine_id }}{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+    /* ... (Giữ nguyên Style cũ) ... */
+    body { overflow: hidden; height: 100vh; }
+    #inspection-container { font-size: 16px !important; height: calc(100vh - 105px); display: flex; flex-direction: column; padding-bottom: 5px !important; }
+    .info-header { flex-shrink: 0; }
+    .main-content-row { flex-grow: 1; min-height: 0; }
+    .col-flex { height: 100%; display: flex; flex-direction: column; }
+    .center-panel { display: flex; flex-direction: column; height: 100%; }
+    .fabric-visualizer-container { flex-grow: 1; width: 100%; background-color: #000 !important; border: 2px solid #00e676; border-radius: 8px; position: relative; overflow: hidden; margin: 5px 0; min-height: 150px; }
+    .fabric-track { width: 100%; height: 100%; background-image: linear-gradient(45deg, #111 25%, #000 25%, #000 50%, #111 50%, #111 75%, #000 75%, #000 100%); background-size: 50px 50px; position: absolute; top: 0; left: 0; opacity: 0.6; }
+    .machine-running .fabric-track { animation: fabricScroll 0.5s linear infinite; }
+    @keyframes fabricScroll { from { background-position: 0 0; } to { background-position: 0 50px; } }
+    .dark-mode .fabric-visualizer-container { background-color: #000; border-color: #00e676; }
+    .defect-marker { position: absolute; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); border: 3px solid #fff; z-index: 10; transition: top 0.5s ease; box-shadow: 0 0 12px rgba(255,255,255,0.8); }
+    .defect-marker.point-1 { background-color: #00e676; }
+    .defect-marker.point-2 { background-color: #ffea00; }
+    .defect-marker.point-3 { background-color: #ff9100; }
+    .defect-marker.point-4 { background-color: #ff0000; width: 40px; height: 40px; box-shadow: 0 0 18px #ff0000; }
+    .scan-line { position: absolute; top: 0; left: 0; width: 100%; height: 6px; background-color: #ff0000; box-shadow: 0 0 18px #ff0000; z-index: 20; }
+    .log-card { flex-grow: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    #error-log-list-container { flex-grow: 1; overflow-y: auto; background-color: #000; }
+    .meter-display-container { background-color: #000; color: #00e676; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; border: 2px solid #00e676; position: relative; z-index: 2; flex-shrink: 0; }
+    #current-meters { font-family: 'Courier New', Courier, monospace; font-size: 5rem; font-weight: 900; line-height: 1; letter-spacing: -3px; }
+    .btn-defect-uniform { min-height: 90px; height: 100%; font-size: 1.2rem; white-space: normal; line-height: 1.1; display: flex; align-items: center; justify-content: center; text-align: center; background-color: #000 !important; color: #00e676 !important; border: 2px solid #00e676 !important; font-weight: bold; transition: all 0.1s; padding: 2px !important; }
+    .btn-defect-uniform:hover, .btn-defect-uniform:active { background-color: #00e676 !important; color: #000 !important; box-shadow: 0 0 15px #00e676; }
+    .info-card-value { font-size: 1.3rem; font-weight: bold; color: #fff; }
+    .standard-tree ul { list-style-type: none; padding-left: 20px; }
+    .standard-tree li { margin: 5px 0; cursor: pointer; padding: 5px; border-radius: 4px; color: #00e676; font-size: 1.1rem; }
+    .standard-tree li:hover { background-color: #00e676; color: #000; font-weight: bold; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: #00e676; border-radius: 5px; }
+    ::-webkit-scrollbar-track { background: #000; }
+</style>
+{% endblock head %}
+
+{% block content %}
+<div class="container-fluid px-2" id="inspection-container" data-select-machine-url="{{ url_for('main.select_machine') }}">
+
+    <div class="card shadow-sm mb-1 info-header">
+        <div class="card-body py-1">
+            <div class="row align-items-center g-1">
+                <div class="col-md-2 border-end border-secondary">
+                    <small class="text-info fw-bold d-block">MÃ TEM</small>
+                    <div class="info-card-value text-break text-white" id="display-roll-code">
+                        {{ state.roll_code if state.roll_code else '---' }}
+                    </div>
+                </div>
+                <div class="col-md-1 border-end border-secondary text-center">
+                    <small class="text-info fw-bold d-block">MÁY</small>
+                    <div class="info-card-value text-warning">{{ state.machine_id }}</div>
+                </div>
+                <div class="col-md-3 border-end border-secondary">
+                    <small class="text-info fw-bold d-block">VẢI</small>
+                    <div class="d-flex align-items-center">
+                        <span class="info-card-value me-2 text-truncate text-white" id="current-fabric-name" style="max-width: 300px;">{{ state.fabric_name }}</span>
+                        <button id="btn-edit-fabric" class="btn btn-sm btn-outline-light border-0"><i class="bi bi-pencil-square fs-5"></i></button>
+                    </div>
+                </div>
+                <div class="col-md-2 border-end border-secondary">
+                    <small class="text-info fw-bold d-block">LSX</small>
+                    <div class="info-card-value text-white">{{ state.order_number }}</div>
+                </div>
+                <div class="col-md-2 border-end border-secondary">
+                    <small class="text-info fw-bold d-block">KCS</small>
+                    <div class="fw-bold fs-4 text-white">{{ current_user.username }}</div>
+                </div>
+                <div class="col-md-2 text-end">
+                    <button class="btn btn-outline-warning me-1 py-1" id="btn-open-settings" title="Cài đặt"><i class="bi bi-gear-fill fs-4"></i></button>
+                    <a href="{{ url_for('main.select_machine') }}" class="btn btn-outline-danger fw-bold py-1 fs-6"><i class="bi bi-x-lg fs-5"></i> THOÁT</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-1 main-content-row">
+        <div class="col-lg-3 col-flex">
+            <div class="card shadow-sm mb-1 flex-shrink-0">
+                <div class="card-header fw-bold bg-dark py-2 border-bottom border-success fs-6">
+                    <i class="bi bi-people-fill me-2 text-success"></i> <span class="text-success">CÔNG NHÂN</span>
+                </div>
+                <div class="card-body p-2 bg-black">
+                    <div id="no-worker-view">
+                        <div class="alert alert-dark text-center mb-2 p-2 border-secondary text-info fw-bold">ĐANG CHỜ PHÂN CÔNG</div>
+                        <button class="btn btn-primary btn-fat w-100 py-3 fw-bold fs-4" id="btn-show-start-shift-modal" style="background-color: #0d6efd; border: 2px solid #fff;">
+                            <i class="bi bi-person-plus-fill me-2"></i> THÊM CÔNG NHÂN
+                        </button>
+                    </div>
+                    <div id="active-worker-view" style="display: none;">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-info fw-bold fs-5">TÊN:</span> <span id="current-worker-name" class="fw-bold text-white fs-4">---</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-info fw-bold fs-5">CA:</span> <span id="current-shift" class="badge bg-warning text-dark fs-5">---</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-info fw-bold fs-5">TỪ MÉT:</span> <span class="fw-bold fs-4 text-success" id="current-start-meter">0.00</span>
+                        </div>
+                        <button class="btn btn-warning btn-fat w-100 py-3 fw-bold text-dark fs-4" id="btn-show-end-shift-modal">
+                            <i class="bi bi-box-arrow-right me-2"></i> KẾT THÚC CA & RỜI MÁY
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm h-100">
+                <div class="card-body p-2 d-flex flex-column gap-2 bg-black">
+                    <div class="mb-2">
+                        <label class="form-label fw-bold small text-warning mb-1 fs-6">CHẾ ĐỘ KHỔ VẢI</label>
+                        <div class="btn-group w-100" role="group">
+                            <button type="button" class="btn btn-outline-secondary active fw-bold py-2 fs-4" id="btn-mode-1">1</button>
+                            <button type="button" class="btn btn-outline-secondary fw-bold py-2 fs-4" id="btn-mode-2">2</button>
+                            <button type="button" class="btn btn-outline-secondary fw-bold py-2 fs-4" id="btn-mode-3">3</button>
+                        </div>
+                    </div>
+
+                    <button id="btn-split-roll" class="btn btn-fat w-100 mt-auto fw-bold py-2 fs-4" style="background-color: #6f42c1; color: white; border: 2px solid #b185ff;">
+                        <i class="bi bi-scissors me-2"></i> TÁCH CÂY
+                    </button>
+                    
+                    <div class="row g-1" style="flex-grow: 1;">
+                        <div class="col-6">
+                            <button id="btn-downgrade" class="btn btn-fat w-100 h-100 fs-5 fw-bold py-2" style="background-color: #fd7e14; color: white; border: 2px solid #ffb673;">
+                                <i class="bi bi-arrow-down-circle"></i> HẠ LOẠI
+                            </button>
+                        </div>
+                        <div class="col-6">
+                            <button id="btn-quick-repair" class="btn btn-fat w-100 h-100 fs-5 fw-bold py-2" style="background-color: #ffc107; color: black; border: 2px solid #ffeeba;">
+                                <i class="bi bi-tools"></i> ĐỂ SỬA
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5 col-flex">
+            <div class="card shadow-sm h-100">
+                <div class="card-header fw-bold bg-dark text-success text-center py-2 border-bottom border-success fs-5">GIÁM SÁT MÁY</div>
+                <div class="card-body p-2 center-panel bg-black">
+                    <div class="meter-display-container text-center w-100">
+                        <div id="current-meters">0.00</div>
+                        <div class="text-uppercase fw-bold mt-0 fs-4" style="color: #00e676;">MÉT</div>
+                    </div>
+
+                    <div class="fabric-visualizer-container" id="fabric-visualizer">
+                        <div class="fabric-track"></div>
+                        <div class="scan-line"></div>
+                    </div>
+
+                    <div class="text-center mb-2">
+                        <span id="modbus-status" class="badge bg-secondary rounded-pill fs-6 px-4 py-2 border border-white">Offline</span>
+                        <span id="downgrade-badge" class="badge bg-warning text-dark rounded-pill ms-2 fs-6 px-4 py-2 border border-white" style="display:none">ĐÃ HẠ LOẠI</span>
+                    </div>
+
+                    <div class="d-grid gap-2 col-12 mx-auto mt-auto mb-1">
+                        <button id="btn-reset-meter" class="btn btn-fat btn-outline-warning py-3 fw-bold fs-4">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i> RESET MÉT
+                        </button>
+                        <button id="btn-save-ticket" class="btn btn-fat btn-danger py-3 fw-bold border-white fs-4">
+                            <i class="bi bi-save2-fill me-2"></i> LƯU & KẾT THÚC
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 col-flex">
+            <div class="card shadow-sm mb-1 flex-shrink-0" style="height: 50%;">
+                <div class="card-header fw-bold bg-danger text-white py-2 border-bottom border-white fs-5">
+                    <i class="bi bi-lightning-fill"></i> GHI LỖI
+                </div>
+                <div class="card-body p-1 bg-black">
+                    <div id="defect-grid" class="row g-1 defect-grid"></div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm log-card" style="height: 50%;">
+                <div class="card-header fw-bold bg-dark text-white py-2 d-flex justify-content-between align-items-center border-bottom border-secondary">
+                    <span class="fs-6"><i class="bi bi-journal-text text-warning"></i> <span class="text-warning">NHẬT KÝ</span></span>
+                    <span class="fs-5">
+                        <span class="badge bg-danger border border-white"><span id="total-error-points">0</span> ĐIỂM</span>
+                        <span class="badge bg-secondary ms-1 border border-white"><span id="total-error-count">0</span> LỖI</span>
+                    </span>
+                </div>
+                <div class="card-body p-0 d-flex flex-column h-100 bg-black" style="overflow: hidden;">
+                    <div id="error-log-list-container">
+                        <ul id="error-log-list" class="list-group list-group-flush fs-6"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="subDefectModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h4 class="modal-title fw-bold text-success fs-3" id="subDefectModalLabel">CHI TIẾT LỖI</h4>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4 bg-black" id="subDefectModalBody"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="standardsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-success fs-3"><i class="bi bi-sliders"></i> Cài đặt & Quản lý Tiêu chuẩn</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row h-100">
+                    <div class="col-md-3 border-end">
+                        <h6 class="fw-bold mb-4 text-info fs-5">Danh sách Tiêu chuẩn</h6>
+                        <div class="standard-tree" style="max-height: 900px; overflow-y: auto;">
+                            {% for group, items in standards_tree.items() %}
+                                <div class="mb-4">
+                                    <div class="group-title text-uppercase small text-warning fs-6"><i class="bi bi-folder2-open"></i> {{ group }}</div>
+                                    <ul>
+                                        {% for std in items %}
+                                            <li onclick="selectStandardFromTree(this.dataset.id, this.dataset.name)" 
+                                                data-id="{{ std.id }}" 
+                                                data-name="{{ std.name }}">
+                                                <i class="bi bi-file-earmark-text"></i> {{ std.name }}
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            {% endfor %}
+                        </div>
+                        <hr>
+                        <button class="btn btn-outline-success btn-sm w-100 py-3 fw-bold fs-4" id="btn-create-standard">
+                            <i class="bi bi-plus-circle"></i> Tạo tiêu chuẩn mới
+                        </button>
+                    </div>
+                    
+                    <div class="col-md-9">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h4 class="mb-0 fw-bold text-success fs-3" id="current-standard-name-display">---</h4>
+                            <div>
+                                <button type="button" class="btn btn-outline-warning btn-lg fs-4 me-2" id="btn-set-default-standard">
+                                    <i class="bi bi-star"></i> Đặt làm Mặc định
+                                </button>
+                                <button type="button" class="btn btn-primary btn-lg fs-4" id="btn-save-standards">
+                                    <i class="bi bi-save"></i> Lưu Cấu hình
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card bg-body-secondary mb-4">
+                            <div class="card-body py-4">
+                                <div class="row g-4 align-items-center">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold mb-0 text-info fs-5">Min Length (Cảnh báo):</label>
+                                        <input type="number" id="setting-min-length" class="form-control form-control-lg fs-4" value="0">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold mb-0 text-info fs-5">Đơn vị:</label>
+                                        <select id="setting-unit" class="form-select form-select-lg fs-4">
+                                            <option value="m">Mét (m)</option>
+                                            <option value="yd">Yard (yd)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold mb-0 text-info fs-5">Mẫu Tem in:</label>
+                                        <select id="setting-label-template" class="form-select form-select-lg fs-4">
+                                            <option value="default">Mặc định (TSPL)</option>
+                                            <option value="compact">Tem nhỏ (Compact)</option>
+                                            <option value="qrcode_only">Chỉ QR Code</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h5 class="fw-bold mt-4 mb-3 text-warning fs-4"><i class="bi bi-list-check"></i> Danh sách Lỗi</h5>
+                        <div class="table-responsive border rounded" style="max-height: 900px; overflow-y: auto;">
+                            <table class="table table-hover align-middle mb-0 fs-5">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th style="width: 40%">Tên Lỗi</th>
+                                        <th style="width: 20%">Nhóm</th>
+                                        <th style="width: 10%">Điểm</th>
+                                        <th style="width: 10%" class="text-center">Fatal</th>
+                                        <th style="width: 20%">Hành động</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="defect-settings-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editFabricModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-success fs-3">Chọn loại vải khác</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-4 w-100 col-12">
+                    <label class="form-label text-info fw-bold fs-5">Tên vải (Chọn hoặc Nhập):</label>
+                    <input type="text" 
+                           class="form-control form-control-lg fs-4" 
+                           list="fabric-options" 
+                           id="fabric-select" 
+                           placeholder="Nhập tên vải..." 
+                           data-vkb 
+                           autocomplete="off"
+                           style="height: 4.2rem;">
+                    <datalist id="fabric-options">
+                        </datalist>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-lg fs-4" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary btn-lg fs-4" id="btn-confirm-update-fabric">Cập nhật</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="positionSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-info-subtle">
+                <h5 class="modal-title fw-bold text-dark fs-4">Vị trí: <span id="modal-error-type-position"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="position-buttons-2" class="row g-3 d-none">
+                    <div class="col-6"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Trái')">TRÁI</button></div>
+                    <div class="col-6"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Phải')">PHẢI</button></div>
+                </div>
+                <div id="position-buttons-3" class="row g-3 d-none">
+                    <div class="col-4"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Trái')">T</button></div>
+                    <div class="col-4"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Giữa')">G</button></div>
+                    <div class="col-4"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Phải')">P</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="startShiftModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-success fs-3">Bắt đầu Ca</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-4">
+                    <label class="form-label fw-bold text-info fs-5">Quét/Nhập Tên:</label>
+                    <input type="text" id="worker-search-input" class="form-control form-control-lg fs-4" placeholder="Quét thẻ..." data-vkb style="height: 4.8rem;">
+                    <div id="worker-scan-result" class="mt-2 fw-bold text-white fs-5"></div>
+                    <ul id="worker-search-results" class="list-group mt-2 position-absolute w-100 shadow fs-5" style="display:none; z-index:1000;"></ul>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label fw-bold text-info fs-5">Ca:</label>
+                    <div class="btn-group w-100">
+                        <input type="radio" class="btn-check" name="shift-radio" id="s1" value="Sáng" checked>
+                        <label class="btn btn-outline-primary py-4 fs-2" for="s1">Sáng</label>
+                        <input type="radio" class="btn-check" name="shift-radio" id="s2" value="Chiều">
+                        <label class="btn btn-outline-primary py-4 fs-2" for="s2">Chiều</label>
+                        <input type="radio" class="btn-check" name="shift-radio" id="s3" value="Đêm">
+                        <label class="btn btn-outline-primary py-4 fs-2" for="s3">Đêm</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-lg fs-4" data-bs-dismiss="modal">Hủy</button>
+                <button class="btn btn-primary px-5 btn-lg fs-4" id="confirm-start-shift-btn" disabled>Bắt đầu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="endShiftModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning-subtle text-dark">
+                <h4 class="modal-title fw-bold fs-3">Xác nhận Sản Lượng</h4>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="alert alert-info py-4 mb-4">
+                            <small class="text-dark fw-bold fs-5">Công nhân:</small> 
+                            <strong id="grade-modal-worker-name" class="fs-4 text-dark"></strong><br>
+                            <small class="text-dark fw-bold fs-5">Sản lượng máy:</small> 
+                            <strong id="grade-modal-total-meters" class="text-primary fs-3"></strong>
+                        </div>
+                        <div class="mb-4">
+                            <label class="fw-bold text-info fs-4">Loại 1 (G1)</label>
+                            <input type="text" class="form-control form-control-lg numpad-target fs-1 fw-bold text-success" style="height: 6rem;" id="grade1-meters" readonly>
+                        </div>
+                        <div class="mb-4">
+                            <label class="fw-bold text-info fs-4">Loại 2 (G2)</label>
+                            <input type="text" class="form-control form-control-lg numpad-target fs-1 fw-bold text-warning" style="height: 6rem;" id="grade2-meters">
+                        </div>
+                        <div id="grade-modal-error" class="alert alert-danger py-2 fs-5" style="display:none"></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="row g-3" id="custom-numpad">
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('7')">7</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('8')">8</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('9')">9</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('4')">4</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('5')">5</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('6')">6</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('1')">1</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('2')">2</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('3')">3</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('0')">0</button></div>
+                            <div class="col-4"><button class="btn btn-secondary w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('.')">.</button></div>
+                            <div class="col-4"><button class="btn btn-danger w-100 numpad-btn py-5 fs-1 fw-bold" onclick="numpadPress('DEL')">⌫</button></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-lg fs-4" data-bs-dismiss="modal">Hủy</button>
+                <button class="btn btn-success px-5 btn-lg fs-4" id="btn-confirm-end-shift">LƯU & KẾT THÚC</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="pointSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h4 class="modal-title fs-3">Điểm lỗi: <span id="modal-error-type" class="text-warning"></span></h4>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-4">
+                    <div class="col-6"><button class="btn btn-outline-success w-100 py-5 fs-1 fw-bold" onclick="selectPoints(1)">1</button></div>
+                    <div class="col-6"><button class="btn btn-outline-warning w-100 py-5 fs-1 fw-bold" onclick="selectPoints(2)">2</button></div>
+                    <div class="col-6"><button class="btn btn-outline-danger w-100 py-5 fs-1 fw-bold" onclick="selectPoints(3)">3</button></div>
+                    <div class="col-6"><button class="btn btn-danger w-100 py-5 fs-1 fw-bold" onclick="selectPoints(4)">4</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="completeInspectionModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h4 class="modal-title fs-3">Xác nhận Hoàn thành</h4>
+            </div>
+            <div class="modal-body">
+                <p class="text-center mb-4 fs-2 text-white">Chọn kho để lưu cây vải:</p>
+                <span id="completed_ticket_id" style="display:none"></span>
+                <div class="mb-4">
+                    <label class="form-label fw-bold text-info fs-4">Ghi chú:</label>
+                    <textarea class="form-control form-control-lg" id="inspection_notes" rows="3" data-vkb style="font-size: 1.8rem;"></textarea>
+                </div>
+                <div class="d-grid gap-4">
+                    <button class="btn btn-success btn-lg py-5 fs-1" id="btn_finish_pallet"><i class="bi bi-check-circle me-2"></i> KHO THÀNH PHẨM</button>
+                    <button class="btn btn-warning btn-lg py-5 fs-1" id="btn_finish_repair"><i class="bi bi-tools me-2"></i> KHO SỬA VẢI</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="actionNoteModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning-subtle text-dark">
+                <h4 class="modal-title fw-bold fs-3" id="actionNoteTitle">Ghi chú Hành động</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-dark fs-4">Nội dung ghi chú:</label>
+                    <textarea class="form-control form-control-lg fs-4" id="action-note-input" rows="4" placeholder="Nhập ghi chú tại đây..." data-vkb></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-lg fs-4" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary btn-lg fs-4" id="btn-confirm-action-note">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="liveToast" class="toast" role="alert">
+        <div class="toast-header">
+            <strong class="me-auto fs-3">Thông báo</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body fs-2 text-dark"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+<script id="flis-initial-state" type="application/json">{{ state | tojson | safe }}</script>
+<script>try { window.FLIS_INITIAL_STATE = JSON.parse(document.getElementById('flis-initial-state').textContent); } catch (e) { window.FLIS_INITIAL_STATE = {}; }</script>
+
+<script src="{{ url_for('static', filename='js/inspection_api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/inspection_standards.js') }}"></script>
+<script src="{{ url_for('static', filename='js/inspection_ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/inspection.js') }}"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        initVirtualKeyboard('[data-vkb]');
+        const originalDisplayObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.attributeName === "style") {
+                    const keyboardEl = document.querySelector('.simple-keyboard');
+                    const containerEl = document.querySelector('.simple-keyboard-container');
+                    if (keyboardEl && containerEl) {
+                        if (keyboardEl.style.display === 'none') {
+                            containerEl.style.display = 'none';
+                        } else {
+                            containerEl.style.display = 'block';
+                        }
+                    }
+                }
+            });
+        });
+        const kbElement = document.querySelector('.simple-keyboard');
+        if(kbElement) { originalDisplayObserver.observe(kbElement, { attributes: true }); }
+        
+        document.getElementById('endShiftModal').addEventListener('shown.bs.modal', () => window.ui.setActiveNumpadInput(document.getElementById('grade1-meters')));
+        document.querySelectorAll('.numpad-target').forEach(input => {
+            input.addEventListener('click', function() { window.ui.setActiveNumpadInput(this); });
+            input.addEventListener('focus', function() { window.ui.setActiveNumpadInput(this); });
+        });
+    });
+</script>
+{% endblock %}

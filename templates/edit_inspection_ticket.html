@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% block title %}Sửa Phiếu Chi Tiết{% endblock %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/inspection.css') }}">
+<style>
+    /* Custom styles for Edit Page */
+    .worker-card {
+        border-left: 5px solid #0d6efd;
+        background-color: #f8f9fa;
+        transition: all 0.2s;
+    }
+    .worker-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .error-row {
+        background-color: #fff;
+        border-bottom: 1px dashed #dee2e6;
+    }
+    .error-row:last-child {
+        border-bottom: none;
+    }
+    .sticky-footer {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        padding: 15px;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        z-index: 100;
+        border-top: 1px solid #dee2e6;
+    }
+    .total-display {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+</style>
+{% endblock head %}
+
+{% block content %}
+<div class="container-fluid mt-3 mb-5 pb-5" 
+     id="edit-ticket-container" 
+     data-roll-id="{{ roll_id }}">
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-pencil-square"></i> CHỈNH SỬA PHIẾU KIỂM</h5>
+            <span class="badge bg-light text-primary" id="header_ticket_id">Loading...</span>
+        </div>
+        <div class="card-body">
+            <form id="ticket-main-form">
+                <div class="row g-3">
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Mã Máy</label>
+                        <input type="text" class="form-control fw-bold" id="info_machine_id" data-vkb>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted">Tên Vải <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control fw-bold border-info" id="info_fabric_name" data-vkb>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Lệnh SX (LSX)</label>
+                        <input type="text" class="form-control fw-bold" id="info_order_number" data-vkb>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted">Ngày Kiểm</label>
+                        <input type="datetime-local" class="form-control" id="info_inspection_date">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Nhân viên KCS (Master)</label>
+                        <select class="form-select" id="info_inspector_id">
+                            </select>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="text-primary fw-bold"><i class="bi bi-people-fill"></i> DANH SÁCH CÔNG NHÂN & LỖI</h5>
+        <button class="btn btn-outline-primary btn-sm" id="btn-add-worker-modal">
+            <i class="bi bi-person-plus-fill"></i> Thêm Công Nhân
+        </button>
+    </div>
+
+    <div id="workers-container">
+        </div>
+
+</div>
+
+<div class="sticky-footer d-flex justify-content-between align-items-center">
+    <div class="d-flex gap-4">
+        <div class="text-center">
+            <small class="text-muted d-block">Tổng G1</small>
+            <span class="text-success fw-bold fs-5" id="footer-sum-g1">0.00</span>
+        </div>
+        <div class="text-center">
+            <small class="text-muted d-block">Tổng G2</small>
+            <span class="text-warning fw-bold fs-5" id="footer-sum-g2">0.00</span>
+        </div>
+        <div class="text-center border-start ps-3">
+            <small class="text-muted d-block">TỔNG MÉT</small>
+            <span class="text-primary fw-bold fs-4" id="footer-total-meters">0.00 M</span>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('main.inspection_history') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Quay lại
+        </a>
+        <button class="btn btn-info text-white" id="btn-reprint">
+            <i class="bi bi-printer"></i> In Lại Tem
+        </button>
+        <button class="btn btn-success fw-bold px-4" id="btn-save-all">
+            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            <i class="bi bi-save"></i> LƯU THAY ĐỔI
+        </button>
+    </div>
+</div>
+
+<div class="modal fade" id="addWorkerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Thêm Công Nhân Vào Phiếu</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label>Tìm kiếm (Tên/Mã):</label>
+                    <input type="text" class="form-control" id="worker-search-term" data-vkb>
+                    <div id="worker-search-results" class="list-group mt-2"></div>
+                </div>
+                <div class="mb-3">
+                    <label>Ca làm việc:</label>
+                    <select class="form-select" id="new-worker-shift">
+                        <option value="1">Ca 1 (Sáng)</option>
+                        <option value="2">Ca 2 (Chiều)</option>
+                        <option value="3">Ca 3 (Đêm)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addErrorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark"><h5 class="modal-title">Thêm Lỗi</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="target-worker-index">
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label>Vị trí mét:</label>
+                        <input type="number" class="form-control fw-bold" id="new-error-meter" step="0.1" data-vkb>
+                    </div>
+                    <div class="col-md-6">
+                        <label>Điểm lỗi:</label>
+                        <select class="form-select" id="new-error-points">
+                            <option value="1">1 Điểm</option>
+                            <option value="2">2 Điểm</option>
+                            <option value="3">3 Điểm</option>
+                            <option value="4">4 Điểm</option>
+                        </select>
+                    </div>
+                </div>
+
+                <label>Chọn loại lỗi:</label>
+                <div class="row g-2 mt-1" id="error-type-grid">
+                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Thủng lỗ">Thủng lỗ</button></div>
+                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Mối nối">Mối nối</button></div>
+                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Tạp bông">Tạp bông</button></div>
+                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Vết bẩn">Vết bẩn</button></div>
+                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Sợi thô">Sợi thô</button></div>
+                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Lỗi biên">Lỗi biên</button></div>
+                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Khác">Khác</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1055;">
+    <div id="liveToast" class="toast" role="alert"><div class="toast-header"><strong class="me-auto">Thông báo</strong></div><div class="toast-body"></div></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/edit_inspection_ticket.js') }}"></script>
+<script>
+    // Init Virtual Keyboard on Load
+    document.addEventListener('DOMContentLoaded', () => {
+        if(typeof initVirtualKeyboard === 'function') initVirtualKeyboard('[data-vkb]');
+    });
+</script>
+{% endblock %}

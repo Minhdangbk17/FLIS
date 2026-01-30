@@ -1,0 +1,27 @@
+#current-meters {
+    font-size: 5rem;
+    font-weight: bold;
+    line-height: 1;
+}
+
+#error-log-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.defect-grid .btn {
+    padding: 0.5rem 0.25rem;
+    font-size: 0.8rem;
+    white-space: normal;
+    min-height: 55px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+/* Style for disabled defect grid */
+#defect-grid[disabled] {
+    opacity: 0.5;
+    pointer-events: none;
+}

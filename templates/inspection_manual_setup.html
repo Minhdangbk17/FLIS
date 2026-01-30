@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Thiết lập Kiểm tra Thủ công{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="mb-0">Thiết lập Phiếu Kiểm tra Thủ công</h2>
+                <a href="{{ url_for('main.main_menu') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-lg me-1"></i> Hủy
+                </a>
+            </div>
+            
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    Vui lòng nhập thông tin cho cây vải sắp kiểm tra
+                </div>
+                <div class="card-body">
+                    <!-- Form sẽ gửi dữ liệu đến route `start_manual_inspection` mà chúng ta sẽ tạo ở bước sau -->
+                    <form action="{{ url_for('main.start_manual_inspection') }}" method="POST">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="machine_id" class="form-label">Mã máy dệt</label>
+                                <input type="text" class="form-control" id="machine_id" name="machine_id" required data-vkb>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="order_number" class="form-label">Lệnh sản xuất</label>
+                                <input type="text" class="form-control" id="order_number" name="order_number" required data-vkb>
+                            </div>
+                            <div class="col-12">
+                                <label for="fabric_name" class="form-label">Tên vải</label>
+                                <input type="text" class="form-control" id="fabric_name" name="fabric_name" required data-vkb>
+                            </div>
+                            <div class="col-12 mt-4 d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <i class="bi bi-play-circle-fill me-2"></i> Bắt đầu Kiểm tra
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <p class="text-muted text-center mt-3 small">
+                Chức năng này dùng cho các trường hợp kiểm tra đột xuất hoặc khi mặt hàng chưa được cập nhật trên hệ thống.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<!-- Khởi tạo bàn phím ảo cho các ô input trong form -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        initVirtualKeyboard('[data-vkb]');
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% block title %}Quản lý Pallet{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+    /* Layout 3 cột full chiều cao */
+    .pallet-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 150px); 
+    }
+    .pallet-row {
+        flex-grow: 1; 
+    }
+    .pallet-col {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    .list-group-container {
+        flex-grow: 1; 
+        overflow-y: auto; 
+    }
+    
+    #roll_scan_input:focus {
+        background-color: #fffbeb;
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.25rem rgba(13,110,253,.25);
+    }
+    
+    #pallet_list_group .list-group-item.active {
+        font-weight: bold;
+    }
+    
+    /* Nút xóa cây vải (chỉ hiện khi hover) */
+    #roll_list_in_pallet .btn-delete-roll {
+        display: none; 
+    }
+    #roll_list_in_pallet .list-group-item:hover .btn-delete-roll {
+        display: inline-block;
+    }
+    
+    /* Style cho badge trạng thái */
+    .badge-status {
+        font-size: 0.8em;
+        padding: 0.4em 0.6em;
+    }
+</style>
+{% endblock head %}
+
+{% block content %}
+<div class="container-fluid mt-4 pallet-container">
+    
+    <div class="row mb-3 align-items-end">
+        <div class="col-md-8">
+            <h2 class="mb-0">Quản lý Pallet & Kho</h2>
+            <p class="text-muted">Tạo pallet, quét cây vải từ kho và xuất kho vải mộc.</p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <a href="{{ url_for('main.main_menu') }}" class="btn btn-secondary"><i class="bi bi-arrow-left me-2"></i>Quay lại Menu</a>
+        </div>
+    </div>
+
+    <div class="row g-3 pallet-row">
+
+        <div class="col-md-3 pallet-col">
+            <div class="card shadow-sm h-100">
+                <div class="card-header fw-bold bg-body-secondary">
+                    <i class="bi bi-stack me-1"></i> Pallet Đang Mở
+                </div>
+                <div class="card-body d-flex flex-column p-0">
+                    <div class="p-3 border-bottom">
+                        <button class="btn btn-primary w-100 py-2" id="btn_create_pallet">
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                            <i class="bi bi-plus-circle me-1"></i> Tạo Pallet Mới
+                        </button>
+                    </div>
+                    <div class="list-group-container">
+                        <ul class="list-group list-group-flush" id="pallet_list_group">
+                            <li class="list-group-item text-center p-5" id="pallet_list_loading">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="text-muted mt-2">Đang tải danh sách...</p>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-5 pallet-col">
+            <div class="card shadow-sm h-100">
+                <div class="card-header fw-bold bg-body-secondary">
+                    <i class="bi bi-upc-scan me-1"></i> Quét Cây Vải
+                </div>
+                <div class="card-body">
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Nguồn Cây Vải:</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="warehouse_type" id="wh_inspected" value="TO_INSPECTED_WAREHOUSE" checked>
+                            <label class="btn btn-outline-success" for="wh_inspected">
+                                <i class="bi bi-check-circle me-1"></i> Kho Thành Phẩm
+                            </label>
+
+                            <input type="radio" class="btn-check" name="warehouse_type" id="wh_repair" value="TO_REPAIR_WAREHOUSE">
+                            <label class="btn btn-outline-warning" for="wh_repair">
+                                <i class="bi bi-tools me-1"></i> Kho Sửa Vải
+                            </label>
+                        </div>
+                    </div>
+
+                    <label for="roll_scan_input" class="form-label fw-bold">Mã vạch cây vải:</label>
+                    <div class="input-group mb-2">
+                        <span class="input-group-text"><i class="bi bi-qr-code"></i></span>
+                        <input type="text" id="roll_scan_input" class="form-control form-control-lg" placeholder="Quét mã để thêm..." disabled>
+                    </div>
+                    <div id="roll_scan_status" class="form-text">Vui lòng chọn Pallet trước.</div>
+                    
+                    <div class="card mt-3 border-success" id="roll_scan_result_card" style="display: none;">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <h5 class="card-title text-success fw-bold" id="scanned_roll_number"></h5>
+                                <span class="badge bg-success" id="scanned_warehouse_badge">Đúng kho</span>
+                            </div>
+                            <p class="card-text mb-1">Vải: <strong id="scanned_fabric_name"></strong></p>
+                            <p class="card-text">Mét: <span id="scanned_total_meters" class="fw-bold fs-5"></span> m</p>
+                            <button class="btn btn-success w-100 btn-lg" id="btn_add_roll">
+                                <i class="bi bi-arrow-right-circle me-2"></i> Thêm vào Pallet
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 pallet-col">
+            <div class="card shadow-sm h-100">
+                <div class="card-header fw-bold bg-body-secondary d-flex justify-content-between align-items-center">
+                    <span>
+                        <i class="bi bi-list-task me-1"></i>
+                        Chi tiết: <span class="text-primary" id="selected_pallet_id_display">---</span>
+                    </span>
+                    
+                    <div class="btn-group">
+                        <button class="btn btn-warning btn-sm fw-bold" id="btn_export_pallet" disabled title="Xuất kho vải mộc">
+                            <i class="bi bi-box-arrow-right"></i> Xuất Kho
+                        </button>
+                        
+                        <button class="btn btn-info btn-sm fw-bold" id="btn_print_pallet" disabled title="In bảng kê">
+                            <i class="bi bi-printer"></i> In
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="card-body d-flex flex-column p-0">
+                    <div class="list-group-container">
+                        <ul class="list-group list-group-flush" id="roll_list_in_pallet">
+                            <li class="list-group-item text-center p-5 text-muted" id="pallet_detail_placeholder">
+                                Chọn pallet để xem chi tiết.
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-footer bg-light fw-bold d-flex justify-content-between align-items-center">
+                        <div>SL: <span id="pallet_roll_count" class="text-primary">0</span> cây</div>
+                        <div>Tổng: <span id="pallet_total_meters" class="text-primary fs-5">0.00</span> m</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/manage_pallets.js') }}"></script>
+{% endblock %}

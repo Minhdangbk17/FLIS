@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Đăng nhập hệ thống{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6"> 
+        <div class="card shadow-lg">
+            <div class="card-header bg-dark text-success text-center border-bottom border-success py-3">
+                <h4 class="fw-bold fs-3 mb-0"><i class="bi bi-shield-lock"></i> ĐĂNG NHẬP FLIS</h4>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('auth.login') }}" autocomplete="off">
+                    <div class="mb-4">
+                        <label class="form-label text-info fw-bold fs-4">Tên đăng nhập</label>
+                        <input type="text" id="username" name="username" class="form-control form-control-lg fs-3" style="height: 4rem;" required autofocus data-vkb autocomplete="off">
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label text-info fw-bold fs-4">Mật khẩu</label>
+                        <input type="password" id="password" name="password" class="form-control form-control-lg fs-3" style="height: 4rem;" required data-vkb autocomplete="off">
+                    </div>
+                    
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }} py-3 fs-4 text-center" role="alert">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+
+                    <div class="d-grid mt-4">
+                        <button type="submit" class="btn btn-primary btn-fat fs-3 border-light">ĐĂNG NHẬP</button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer bg-dark text-muted text-center fs-5 py-3 border-top border-success">
+                Hệ thống kiểm soát chất lượng vải
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // [MẸO] Xóa sạch dữ liệu cũ khi vừa load trang để tránh trình duyệt tự điền lung tung
+        const inputs = document.querySelectorAll('input[data-vkb]');
+        inputs.forEach(input => {
+            input.value = '';
+        });
+
+        // Khởi tạo bàn phím cho các input có data-vkb
+        initVirtualKeyboard('[data-vkb]');
+
+        // Logic ẩn hiện container bàn phím (đồng bộ với script bên Index)
+        const originalDisplayObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.attributeName === "style") {
+                    const keyboardEl = document.querySelector('.simple-keyboard');
+                    const containerEl = document.querySelector('.simple-keyboard-container');
+                    if (keyboardEl && containerEl) {
+                        if (keyboardEl.style.display === 'none') {
+                            containerEl.style.display = 'none';
+                        } else {
+                            containerEl.style.display = 'block';
+                        }
+                    }
+                }
+            });
+        });
+
+        const kbElement = document.querySelector('.simple-keyboard');
+        if(kbElement) {
+            originalDisplayObserver.observe(kbElement, { attributes: true });
+        }
+    });
+</script>
+{% endblock %}

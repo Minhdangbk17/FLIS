@@ -1,0 +1,294 @@
+{% extends 'base.html' %}
+{% block title %}Chọn Máy Dệt - Hệ thống KCS{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-lg-5">
+    <div class="row align-items-center mb-4 g-3">
+        <div class="col-12 col-md-4">
+            <h2 class="fw-bold mb-0 text-primary d-flex align-items-center">
+                <i class="bi bi-grid-fill me-2"></i> Danh Sách Máy Dệt
+            </h2>
+            <small class="text-muted">Chọn máy để bắt đầu phiên kiểm tra</small>
+        </div>
+
+        <div class="col-12 col-md-4">
+            <div class="input-group input-group-lg shadow-sm">
+                <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                <input type="text" id="machine-search" class="form-control bg-dark border-secondary text-light" 
+                       placeholder="Tìm số máy, tên vải, hoặc mã đơn...">
+            </div>
+        </div>
+
+        <div class="col-12 col-md-4 text-md-end">
+            <div class="d-inline-flex align-items-center bg-dark rounded-pill px-4 py-2 border border-secondary shadow-sm">
+                <span class="me-3"><i class="bi bi-person-circle"></i> <strong class="text-info">{{ username }}</strong></span>
+                <div class="vr bg-secondary mx-2" style="height: 20px;"></div>
+                <a href="{{ url_for('main.main_menu') }}" class="btn btn-sm btn-outline-light border-0 mx-1" title="Menu">
+                    <i class="bi bi-house-door-fill fs-5"></i>
+                </a>
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-danger rounded-circle ms-2" title="Đăng xuất">
+                    <i class="bi bi-power"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div id="machine-grid" class="row g-3 g-xl-4">
+        <div class="col-12 text-center py-5">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+            <p class="mt-3 fs-5 text-muted animate-pulse">Đang đồng bộ dữ liệu máy...</p>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmMachineModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-gradient-primary text-white border-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-check2-circle"></i> Xác nhận chọn máy</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4 text-center">
+                <div class="mb-3 text-muted text-uppercase small ls-1">Bạn đang chọn máy</div>
+                <h1 class="display-1 fw-bold text-primary mb-4" id="modal-machine-id">--</h1>
+                
+                <div class="card bg-light border-0 text-start">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="small text-muted fw-bold">LOẠI VẢI (ITEM):</label>
+                                <div class="fs-5 fw-bold text-dark" id="modal-fabric-name"></div>
+                            </div>
+                            <div class="col-12 border-top pt-2">
+                                <label class="small text-muted fw-bold">LỆNH SẢN XUẤT:</label>
+                                <div class="fs-6 font-monospace text-dark" id="modal-order-number"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0 justify-content-center pb-4">
+                <button type="button" class="btn btn-outline-secondary px-4 py-2 rounded-pill" data-bs-dismiss="modal">Quay lại</button>
+                <button type="button" class="btn btn-primary px-5 py-2 rounded-pill fw-bold shadow-sm" id="btn-confirm-select">
+                    BẮT ĐẦU KIỂM TRA <i class="bi bi-arrow-right-short"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Dark Mode Deep Customization */
+    body {
+        background-color: #121212 !important; /* Super Dark Background */
+    }
+    
+    .ls-1 { letter-spacing: 1px; }
+    
+    /* Machine Card Styling */
+    .machine-card {
+        background-color: #1e1e2f;
+        border: 1px solid #2d2d44;
+        transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Hover Effect */
+    .machine-card:hover {
+        transform: translateY(-5px) scale(1.01);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+        border-color: #4f4f6e;
+    }
+
+    /* Active State (Có đơn hàng) */
+    .machine-card.active-machine {
+        border-left: 4px solid #0d6efd; /* Blue Indicator */
+    }
+    .machine-card.active-machine .machine-id {
+        color: #fff;
+    }
+    
+    /* Empty State (Máy trống) */
+    .machine-card.empty-machine {
+        opacity: 0.6;
+        filter: grayscale(0.8);
+    }
+    .machine-card.empty-machine:hover {
+        opacity: 1;
+        filter: grayscale(0);
+    }
+
+    /* Modal Styling */
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+    }
+    .animate-pulse {
+        animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+        0% { opacity: 0.5; }
+        50% { opacity: 1; }
+        100% { opacity: 0.5; }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    const API_URL = "{{ url_for('api_inspection.weaving_machines_status') }}";
+    const NEXT_URL = "{{ url_for('main.inspection_page') }}";
+    
+    // Lưu trữ dữ liệu cục bộ để phục vụ Search nhanh
+    let allMachines = [];
+    let searchTimeout = null;
+
+    async function fetchMachines() {
+        try {
+            const res = await fetch(API_URL);
+            allMachines = await res.json();
+            renderMachines(allMachines);
+        } catch (e) {
+            console.error(e);
+            document.getElementById('machine-grid').innerHTML = 
+                `<div class="col-12 text-center text-danger py-5">
+                    <i class="bi bi-exclamation-triangle display-1"></i>
+                    <p class="mt-3">Mất kết nối máy chủ.</p>
+                </div>`;
+        }
+    }
+
+    function renderMachines(machines) {
+        const grid = document.getElementById('machine-grid');
+        grid.innerHTML = '';
+
+        if (machines.length === 0) {
+            grid.innerHTML = '<div class="col-12 text-center text-muted fs-5 fst-italic py-5">Không tìm thấy máy phù hợp.</div>';
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        machines.forEach(m => {
+            // Logic mới: Dựa vào deployment_ticket_id để xác định trạng thái
+            const hasTicket = !!m.deployment_ticket_id;
+            const fabricName = m.fabric_name && m.fabric_name !== '---' ? m.fabric_name : 'Chưa gán vải';
+            const orderNum = m.order_number || '---';
+            
+            // Setup style classes
+            const containerClass = hasTicket ? 'active-machine' : 'empty-machine';
+            const statusColor = hasTicket ? 'text-success' : 'text-secondary';
+            const statusIcon = hasTicket ? '<i class="bi bi-circle-fill small blink"></i> SẴN SÀNG' : '<i class="bi bi-dash-circle"></i> TRỐNG';
+            const fabricClass = hasTicket ? 'text-info fw-bold' : 'text-muted fst-italic';
+            
+            // Badge Order
+            const orderBadge = hasTicket 
+                ? `<span class="badge bg-dark border border-secondary text-light font-monospace"><i class="bi bi-upc-scan me-1"></i>${orderNum}</span>`
+                : '';
+
+            const col = document.createElement('div');
+            col.className = 'col-12 col-sm-6 col-md-4 col-xl-3';
+            
+            col.innerHTML = `
+                <div class="card h-100 rounded-3 machine-card ${containerClass}" role="button">
+                    <div class="card-body p-3 d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3 class="machine-id fw-bold mb-0 display-6">${m.machine_id}</h3>
+                            <div class="small fw-bold ${statusColor}" style="font-size: 0.75rem; letter-spacing: 0.5px;">
+                                ${statusIcon}
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3 flex-grow-1">
+                            <label class="d-block text-secondary small mb-1" style="font-size: 0.7rem;">SẢN PHẨM HIỆN TẠI</label>
+                            <div class="${fabricClass} fs-5 text-break" style="line-height: 1.3;">
+                                ${fabricName}
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between align-items-end mt-auto pt-3 border-top border-secondary border-opacity-25">
+                            ${orderBadge}
+                            ${hasTicket ? '<i class="bi bi-chevron-right text-primary"></i>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Click Event
+            col.querySelector('.machine-card').addEventListener('click', () => {
+                if (!hasTicket) {
+                    // UX: Thông báo nhẹ nhàng thay vì alert
+                    showToast(`Máy ${m.machine_id} hiện chưa có lệnh sản xuất.`, 'warning');
+                    return;
+                }
+                showConfirm(m);
+            });
+
+            fragment.appendChild(col);
+        });
+
+        grid.appendChild(fragment);
+    }
+
+    // --- Search Logic (Client-side) ---
+    document.getElementById('machine-search').addEventListener('input', (e) => {
+        const keyword = e.target.value.toLowerCase().trim();
+        clearTimeout(searchTimeout);
+        
+        searchTimeout = setTimeout(() => {
+            const filtered = allMachines.filter(m => 
+                m.machine_id.toString().toLowerCase().includes(keyword) ||
+                (m.fabric_name && m.fabric_name.toLowerCase().includes(keyword)) ||
+                (m.order_number && m.order_number.toLowerCase().includes(keyword))
+            );
+            renderMachines(filtered);
+        }, 300); // Debounce 300ms
+    });
+
+    // --- Modal Logic ---
+    let selectedMachine = null;
+    const modalEl = document.getElementById('confirmMachineModal');
+    const modal = new bootstrap.Modal(modalEl);
+
+    function showConfirm(machine) {
+        selectedMachine = machine;
+        document.getElementById('modal-machine-id').textContent = machine.machine_id;
+        document.getElementById('modal-fabric-name').textContent = machine.fabric_name || 'Không xác định';
+        document.getElementById('modal-order-number').textContent = machine.order_number || '---';
+        modal.show();
+    }
+
+    document.getElementById('btn-confirm-select').addEventListener('click', () => {
+        if (selectedMachine) {
+            const btn = document.getElementById('btn-confirm-select');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
+            btn.disabled = true;
+            window.location.href = `${NEXT_URL}?machine_id=${selectedMachine.machine_id}&deployment_ticket_id=${selectedMachine.deployment_ticket_id}`;
+        }
+    });
+
+    // Reset nút khi đóng modal (phòng trường hợp user back lại)
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        const btn = document.getElementById('btn-confirm-select');
+        btn.innerHTML = 'BẮT ĐẦU KIỂM TRA <i class="bi bi-arrow-right-short"></i>';
+        btn.disabled = false;
+    });
+
+    // Helper Toast (Optional)
+    function showToast(msg, type='info') {
+        // Simple fallback alert if you don't have a toast container
+        alert(msg); 
+    }
+
+    // Init
+    fetchMachines();
+    // Refresh mỗi 15s (Thưa hơn vì dữ liệu ít biến động nhanh như realtime status)
+    setInterval(() => {
+        // Chỉ refresh khi user KHÔNG đang tìm kiếm để tránh reset kết quả
+        if(document.getElementById('machine-search').value === '') {
+            fetchMachines();
+        }
+    }, 15000);
+</script>
+{% endblock %}

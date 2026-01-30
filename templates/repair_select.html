@@ -1,0 +1,244 @@
+{% extends 'base.html' %}
+{% block title %}Chọn Cây Sửa Chữa{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-8">
+            <h2 class="fw-bold text-warning">
+                <i class="bi bi-tools me-2"></i>DANH SÁCH CÂY CẦN SỬA
+            </h2>
+            <p class="text-muted mb-0">Chọn cây vải từ danh sách bên dưới để tiến hành khắc phục lỗi.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('main.main_menu') }}" class="btn btn-secondary btn-lg">
+                <i class="bi bi-arrow-left me-2"></i>Quay lại Menu
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4 border-warning">
+        <div class="card-body p-4 bg-dark rounded">
+            <div class="row g-3">
+                <div class="col-md-12">
+                    <label class="form-label text-warning fw-bold fs-5">Tìm kiếm (Quét QR UUID / Mã cây / Tên vải):</label>
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-secondary text-white border-0"><i class="bi bi-qr-code-scan"></i></span>
+                        <input type="text" id="search-roll-input" class="form-control fs-4" 
+                               placeholder="Đặt con trỏ vào đây và quét mã QR trên tem..." 
+                               data-vkb autocomplete="off" autofocus>
+                        <button class="btn btn-warning fw-bold" type="button" id="btn-force-search">
+                            <i class="bi bi-search"></i> Tìm
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped align-middle mb-0" style="font-size: 1.1rem;">
+                    <thead class="table-dark text-warning sticky-top">
+                        <tr>
+                            <th class="py-3 ps-4">Mã Cây</th>
+                            <th class="py-3">Tên Vải</th>
+                            <th class="py-3 text-center">Tổng Mét</th>
+                            <th class="py-3 text-center">Ngày Kiểm</th>
+                            <th class="py-3 text-center">Trạng thái</th>
+                            <th class="py-3 text-end pe-4">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="roll-list-body">
+                        {% if rolls %}
+                            {% for roll in rolls %}
+                            <tr class="roll-item" data-search="{{ roll.roll_number }} {{ roll.fabric_name }}">
+                                <td class="ps-4 fw-bold text-primary fs-4">
+                                    <i class="bi bi-qr-code me-2"></i>{{ roll.roll_number }}
+                                </td>
+                                <td>
+                                    <span class="fw-bold d-block">{{ roll.fabric_name }}</span>
+                                    <small class="text-muted">ID: {{ roll.ticket_id }}</small>
+                                </td>
+                                <td class="text-center fw-bold fs-5">
+                                    {{ "{:,.2f}".format(roll.total_meters) }} m
+                                </td>
+                                <td class="text-center">
+                                    {% if roll.inspection_date %}
+                                        {{ roll.inspection_date.strftime('%d/%m/%Y') }}
+                                        <br>
+                                        <small class="text-muted">{{ roll.inspection_date.strftime('%H:%M') }}</small>
+                                    {% else %}
+                                        ---
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if roll.status == 'TO_REPAIR_WAREHOUSE' %}
+                                        <span class="badge bg-warning text-dark">Cần sửa</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ roll.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end pe-4">
+                                    <a href="{{ url_for('main.repair_session', roll_id=roll.roll_id) }}" class="btn btn-warning btn-lg fw-bold px-4">
+                                        <i class="bi bi-wrench me-2"></i>SỬA
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr id="no-data-row">
+                                <td colspan="6" class="text-center py-5">
+                                    <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+                                    <span class="fs-4 text-muted">Không có dữ liệu hiển thị.</span>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Kích hoạt bàn phím ảo
+        if (typeof initVirtualKeyboard === 'function') {
+            initVirtualKeyboard('[data-vkb]');
+        }
+
+        const searchInput = document.getElementById('search-roll-input');
+        const searchBtn = document.getElementById('btn-force-search');
+        const tableBody = document.getElementById('roll-list-body');
+        
+        // 1. Xử lý Client-side filter (cho trải nghiệm gõ phím mượt)
+        searchInput.addEventListener('input', function(e) {
+            const term = e.target.value.toLowerCase().trim();
+            // Nếu input trống, hiển thị lại tất cả các dòng hiện có
+            if(term === '') {
+                 // Nếu muốn reset về danh sách ban đầu server render, 
+                 // có thể cần reload hoặc giữ DOM gốc. 
+                 // Ở đây tạm thời để trống logic filter client thuần túy vì ta dùng server search chủ yếu.
+            }
+        });
+
+        // 2. Xử lý Enter (Scanner) hoặc nút Tìm kiếm -> Gọi Server API
+        function performServerSearch() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            // Hiển thị loading
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-warning" role="status"></div><div class="mt-2">Đang tìm kiếm...</div></td></tr>`;
+
+            // Gọi API (Đã tạo ở bước Backend)
+            fetch(`/api/repair/get_list?query=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    // [UPDATED] Logic tự động chuyển hướng nếu chỉ có 1 kết quả
+                    if (data && data.length === 1) {
+                        const roll = data[0];
+                        // Hiển thị thông báo chuyển hướng
+                        tableBody.innerHTML = `
+                            <tr>
+                                <td colspan="6" class="text-center py-5 bg-success text-white">
+                                    <i class="bi bi-check-circle fs-1 d-block mb-3"></i>
+                                    <span class="fs-3 fw-bold">Tìm thấy cây ${roll.roll_number}!</span>
+                                    <div class="mt-2">Đang chuyển hướng đến trang sửa chữa...</div>
+                                </td>
+                            </tr>
+                        `;
+                        // Delay nhẹ 500ms để người dùng kịp nhìn thấy (optional)
+                        setTimeout(() => {
+                            window.location.href = `/inspection/repair/session/${roll.roll_id}`;
+                        }, 500);
+                        return;
+                    }
+
+                    // Nếu có nhiều hơn 1 kết quả hoặc 0 kết quả, vẽ lại bảng
+                    renderTable(data);
+                })
+                .catch(err => {
+                    console.error(err);
+                    tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger fw-bold">Lỗi kết nối server!</td></tr>`;
+                });
+        }
+
+        // Bắt sự kiện Enter (thường do máy quét gửi lệnh cuối cùng)
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Ngăn submit form (nếu có)
+                performServerSearch();
+            }
+        });
+
+        // Bắt sự kiện click nút tìm
+        searchBtn.addEventListener('click', performServerSearch);
+
+        // Hàm vẽ lại bảng dữ liệu
+        function renderTable(data) {
+            tableBody.innerHTML = '';
+            
+            if (!data || data.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-5">
+                            <i class="bi bi-search fs-1 text-muted d-block mb-3"></i>
+                            <span class="fs-4 text-muted">Không tìm thấy cây vải nào với mã này.</span>
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            data.forEach(roll => {
+                // Kiểm tra trạng thái để cảnh báo màu sắc
+                let statusBadge = `<span class="badge bg-secondary">${roll.status || 'N/A'}</span>`;
+                if (roll.status === 'TO_REPAIR_WAREHOUSE') {
+                    statusBadge = `<span class="badge bg-warning text-dark">Cần sửa</span>`;
+                } else if (roll.status === 'TO_INSPECTED_WAREHOUSE') {
+                    statusBadge = `<span class="badge bg-success">Đã hoàn thành</span>`;
+                }
+
+                // Format ngày
+                let dateDisplay = '---';
+                if (roll.inspection_date) {
+                    const dateObj = new Date(roll.inspection_date);
+                    const d = dateObj.toLocaleDateString('vi-VN');
+                    const t = dateObj.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+                    dateDisplay = `${d}<br><small class="text-muted">${t}</small>`;
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = 'roll-item';
+                // Tạo URL sửa chữa
+                const repairUrl = `/inspection/repair/session/${roll.roll_id}`;
+
+                tr.innerHTML = `
+                    <td class="ps-4 fw-bold text-primary fs-4">
+                        <i class="bi bi-qr-code me-2"></i>${roll.roll_number}
+                    </td>
+                    <td>
+                        <span class="fw-bold d-block">${roll.fabric_name}</span>
+                        <small class="text-muted">ID: ${roll.ticket_id || '---'}</small>
+                    </td>
+                    <td class="text-center fw-bold fs-5">
+                        ${parseFloat(roll.total_meters || 0).toFixed(2)} m
+                    </td>
+                    <td class="text-center">${dateDisplay}</td>
+                    <td class="text-center">${statusBadge}</td>
+                    <td class="text-end pe-4">
+                        <a href="${repairUrl}" class="btn btn-warning btn-lg fw-bold px-4">
+                            <i class="bi bi-wrench me-2"></i>SỬA
+                        </a>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+    });
+</script>
+{% endblock %}

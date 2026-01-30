@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Báo cáo Sản lượng</title>
+    <style>
+        /*
+         * SỬA LỖI FONT:
+         * Tải font bằng đường dẫn web (url_for) thay vì đường dẫn file
+         * (Đã sửa 'font/' thành 'assets/')
+         */
+        @font-face {
+            font-family: 'DejaVuSans';
+            src: url("{{ url_for('static', filename='assets/DejaVuSans.ttf') }}");
+        }
+        @font-face {
+            font-family: 'DejaVuSans-Bold';
+            src: url("{{ url_for('static', filename='assets/DejaVuSans-Bold.ttf') }}");
+        }
+        
+        body {
+            font-family: 'DejaVuSans', sans-serif;
+            font-size: 10pt;
+            color: #333;
+        }
+        .container {
+            width: 95%;
+            margin: 0 auto;
+        }
+        h1 {
+            font-family: 'DejaVuSans-Bold';
+            font-size: 20pt;
+            text-align: center;
+            color: #000;
+        }
+        h2 {
+            font-family: 'DejaVuSans-Bold';
+            font-size: 14pt;
+            text-align: center;
+            margin-bottom: 5px;
+        }
+        p.sub-header {
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 11pt;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #999;
+            padding: 6px 8px;
+            text-align: left;
+        }
+        th {
+            font-family: 'DejaVuSans-Bold';
+            background-color: #f0f0f0;
+            text-align: center;
+        }
+        td.text-right, th.text-right {
+            text-align: right;
+        }
+        tr.total-row th {
+            font-family: 'DejaVuSans-Bold';
+            background-color: #e0e0e0;
+            text-align: right;
+        }
+        tr.total-row th:first-child {
+            text-align: center;
+        }
+        /* Header (TCT 28) */
+        .header-table {
+            width: 100%;
+            border: none;
+            margin-bottom: 15px;
+        }
+        .header-table td {
+            border: none;
+            padding: 0;
+            vertical-align: top;
+        }
+        .header-company {
+            font-family: 'DejaVuSans-Bold';
+            font-size: 11pt;
+            text-align: center;
+        }
+        .header-enterprise {
+            font-family: 'DejaVuSans-Bold';
+            font-size: 11pt;
+            text-align: center;
+        }
+
+        /* (MỚI) CSS Cho trang in */
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            /* (Tùy chọn) Ẩn các nút bấm nếu bạn thêm chúng vào đây */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <table class="header-table">
+            <tr>
+                <td>
+                    <div class="header-company">TỔNG CÔNG TY 28</div>
+                    <div class="header-enterprise">XÍ NGHIỆP DỆT</div>
+                </td>
+            </tr>
+        </table>
+
+        <h1>BÁO CÁO TỔNG HỢP SẢN LƯỢNG</h1>
+        <h2>Mặt hàng: {{ item_info.fabric_name }}</h2>
+        <p class="sub-header">Thời gian: {{ date_range }}</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>STT</th>
+                    <th>Ngày Sản Xuất</th>
+                    <th class="text-right">Sản lượng L1 (m)</th>
+                    <th class="text-right">Sản lượng L2 (m)</th>
+                    <th class="text-right">Tổng Cộng (m)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report_data %}
+                <tr>
+                    <td style="text-align: center;">{{ loop.index }}</td>
+                    <td>{{ row.production_date.strftime('%d/%m/%Y') }}</td>
+                    <td class="text-right">{{ "%.2f"|format(row.total_grade1|float) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(row.total_grade2|float) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(row.daily_total|float) }}</td>
+                </tr>
+                {% endfor %}
+                
+                <tr class="total-row">
+                    <th colspan="2">TỔNG CỘNG</th>
+                    <th class="text-right">{{ "%.2f"|format(totals.g1|float) }}</th>
+                    <th class="text-right">{{ "%.2f"|format(totals.g2|float) }}</th>
+                    <th class="text-right">{{ "%.2f"|format(totals.all|float) }}</th>
+                </tr>
+            </tbody>
+        </table>
+
+    </div>
+
+    <script>
+        // Tự động mở hộp thoại in khi trang tải xong
+        window.onload = function() {
+            window.print();
+        }
+    </script>
+</body>
+</html>

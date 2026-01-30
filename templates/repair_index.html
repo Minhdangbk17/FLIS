@@ -1,0 +1,321 @@
+{% extends 'base.html' %}
+{% block title %}Sửa Chữa Vải - {{ state.roll_code }}{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+    /* --- CORE LAYOUT STYLES --- */
+    body { overflow: hidden; height: 100vh; background-color: #121212; }
+    #inspection-container { font-size: 16px !important; height: calc(100vh - 105px); display: flex; flex-direction: column; padding-bottom: 5px !important; }
+    .info-header { flex-shrink: 0; }
+    .main-content-row { flex-grow: 1; min-height: 0; }
+    .col-flex { height: 100%; display: flex; flex-direction: column; }
+    .center-panel { display: flex; flex-direction: column; height: 100%; }
+    
+    /* --- VISUALIZER --- */
+    .fabric-visualizer-container { flex-grow: 1; width: 100%; background-color: #000 !important; border: 2px solid #ffc107; border-radius: 8px; position: relative; overflow: hidden; margin: 5px 0; min-height: 150px; }
+    .fabric-track { width: 100%; height: 100%; background-image: linear-gradient(45deg, #111 25%, #000 25%, #000 50%, #111 50%, #111 75%, #000 75%, #000 100%); background-size: 50px 50px; position: absolute; top: 0; left: 0; opacity: 0.6; }
+    .scan-line { position: absolute; top: 0; left: 0; width: 100%; height: 6px; background-color: #ffc107; box-shadow: 0 0 18px #ffc107; z-index: 20; }
+    
+    /* Markers (Chấm lỗi trên mô hình) */
+    .defect-marker { position: absolute; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); border: 3px solid #fff; z-index: 10; transition: top 0.5s ease; box-shadow: 0 0 12px rgba(255,255,255,0.8); }
+    .defect-marker.point-1 { background-color: #00e676; }
+    .defect-marker.point-2 { background-color: #ffea00; }
+    .defect-marker.point-3 { background-color: #ff9100; }
+    .defect-marker.point-4 { background-color: #ff0000; width: 40px; height: 40px; box-shadow: 0 0 18px #ff0000; }
+
+    /* --- DEFECT GRID & LOG --- */
+    .log-card { flex-grow: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    #error-log-list-container { flex-grow: 1; overflow-y: auto; background-color: #000; }
+    
+    /* Button Style cho lưới lỗi (Do inspection_ui.js render) */
+    .btn-defect-uniform { min-height: 70px; height: 100%; font-size: 1.1rem; white-space: normal; line-height: 1.1; display: flex; align-items: center; justify-content: center; text-align: center; background-color: #000 !important; color: #ffc107 !important; border: 2px solid #ffc107 !important; font-weight: bold; transition: all 0.1s; padding: 2px !important; }
+    .btn-defect-uniform:hover, .btn-defect-uniform:active { background-color: #ffc107 !important; color: #000 !important; box-shadow: 0 0 15px #ffc107; transform: scale(0.98); }
+
+    .meter-display-container { background-color: #000; color: #ffc107; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; border: 2px solid #ffc107; position: relative; z-index: 2; flex-shrink: 0; }
+    #current-meters { font-family: 'Courier New', Courier, monospace; font-size: 5rem; font-weight: 900; line-height: 1; letter-spacing: -3px; }
+    
+    /* --- REPAIR SPECIFIC --- */
+    .repair-mode-badge { background-color: #ffc107; color: #000; font-weight: 900; padding: 5px 10px; border-radius: 4px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); } }
+    
+    /* Lỗi đã sửa (Gạch ngang) */
+    .list-group-item.fixed-error { text-decoration: line-through; color: #6c757d !important; background-color: #1a1a1a !important; border-left: 5px solid #198754 !important; }
+    .list-group-item.fixed-error .badge { opacity: 0.5; }
+    
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: #ffc107; border-radius: 5px; }
+    ::-webkit-scrollbar-track { background: #000; }
+    
+    .blink { animation: blinker 1s linear infinite; }
+    @keyframes blinker { 50% { opacity: 0; } }
+    
+    /* Spin animation for icons */
+    .spin-icon { animation: spin 2s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+</style>
+{% endblock head %}
+
+{% block content %}
+<div class="container-fluid px-2" id="inspection-container">
+
+    <div class="card shadow-sm mb-1 info-header border-warning">
+        <div class="card-body py-1 bg-dark">
+            <div class="row align-items-center g-1">
+                <div class="col-md-3 border-end border-secondary">
+                    <span class="repair-mode-badge fs-5"><i class="bi bi-tools"></i> CHẾ ĐỘ SỬA CHỮA</span>
+                </div>
+                <div class="col-md-2 border-end border-secondary">
+                    <small class="text-secondary fw-bold d-block">MÃ TEM CŨ</small>
+                    <div class="info-card-value text-break text-warning fs-5" id="display-roll-code">
+                        {{ state.roll_code }}
+                    </div>
+                </div>
+                <div class="col-md-3 border-end border-secondary">
+                    <small class="text-secondary fw-bold d-block">LOẠI VẢI</small>
+                    <span class="info-card-value text-white fs-5">{{ state.fabric_name }}</span>
+                </div>
+                <div class="col-md-2 border-end border-secondary">
+                    <small class="text-secondary fw-bold d-block">NGƯỜI SỬA</small>
+                    <div class="fw-bold fs-5 text-white" id="repair-worker-display">
+                        {{ state.current_worker_details.worker.name if state.current_worker_details else '---' }}
+                    </div>
+                </div>
+                <div class="col-md-2 text-end">
+                    <a href="{{ url_for('main.repair_menu') }}" class="btn btn-outline-danger fw-bold py-1 fs-6"><i class="bi bi-x-lg fs-5"></i> THOÁT</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-1 main-content-row">
+        <div class="col-lg-3 col-flex">
+            <div class="card shadow-sm mb-1 flex-shrink-0 border-warning">
+                <div class="card-header fw-bold bg-dark py-2 border-bottom border-warning fs-6">
+                    <i class="bi bi-person-badge-fill me-2 text-warning"></i> <span class="text-warning">NGƯỜI SỬA CHỮA</span>
+                </div>
+                <div class="card-body p-2 bg-black">
+                    {% if state.current_worker_details %}
+                    <div id="active-worker-view">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary fw-bold fs-5">HỌ TÊN:</span> 
+                            <span id="current-worker-name" class="fw-bold text-white fs-4">{{ state.current_worker_details.worker.name }}</span>
+                        </div>
+                        <div class="alert alert-warning text-center p-1 mb-0 border-warning">
+                            <i class="bi bi-check-circle-fill text-success me-1"></i> <strong>ĐÃ CHỌN NHÂN VIÊN</strong>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div id="no-worker-view">
+                        <div class="alert alert-dark text-center mb-2 p-2 border-secondary text-info fw-bold">CHƯA CÓ NGƯỜI SỬA</div>
+                        <button class="btn btn-warning btn-fat w-100 py-3 fw-bold fs-4" data-bs-toggle="modal" data-bs-target="#repairWorkerModal">
+                            <i class="bi bi-person-plus-fill me-2"></i> CHỌN NGƯỜI SỬA
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card shadow-sm h-100 border-secondary">
+                <div class="card-body p-2 d-flex flex-column justify-content-center align-items-center bg-black text-white text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-arrow-repeat text-info spin-icon" style="font-size: 5rem;"></i>
+                    </div>
+                    <h4 class="text-warning fw-bold mb-2">TRẠNG THÁI</h4>
+                    <div class="alert alert-info border-info w-100 fs-4 fw-bold">
+                        ĐANG CUỘN LẠI<br>SAU SỬA CHỮA
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5 col-flex">
+            <div class="card shadow-sm h-100 border-warning">
+                <div class="card-header fw-bold bg-dark text-warning text-center py-2 border-bottom border-warning fs-5">MÀN HÌNH SỬA CHỮA</div>
+                <div class="card-body p-2 center-panel bg-black">
+                    <div class="meter-display-container text-center w-100">
+                        <div id="current-meters">0.00</div>
+                        <div class="text-uppercase fw-bold mt-0 fs-4" style="color: #ffc107;">MÉT (TRỤC SỬA)</div>
+                    </div>
+
+                    <div class="fabric-visualizer-container" id="fabric-visualizer">
+                        <div class="fabric-track"></div>
+                        <div class="scan-line"></div>
+                        </div>
+
+                    <div class="text-center mb-2">
+                         <span id="modbus-status" class="badge bg-secondary rounded-pill fs-6 px-4 py-2 border border-white">Offline</span>
+                    </div>
+
+                    <div class="d-grid gap-2 col-12 mx-auto mt-auto mb-1">
+                        <button id="btn-reset-meter" class="btn btn-fat btn-outline-secondary py-3 fw-bold fs-4">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i> RESET MÉT
+                        </button>
+                        <button id="btn-finish-repair" class="btn btn-fat btn-success py-3 fw-bold border-white fs-3" data-bs-toggle="modal" data-bs-target="#finishRepairModal">
+                            <i class="bi bi-box-seam me-2"></i> HOÀN TẤT & NHẬP KHO
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 col-flex">
+            <div class="card shadow-sm mb-1 flex-shrink-0" style="height: 35%;">
+                <div class="card-header fw-bold bg-secondary text-white py-2 border-bottom border-white fs-6">
+                    <i class="bi bi-plus-circle"></i> THÊM LỖI PHÁT SINH
+                </div>
+                <div class="card-body p-1 bg-black">
+                    <div id="defect-grid" class="row g-1 defect-grid h-100 overflow-auto"></div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm log-card border-warning" style="height: 65%;">
+                <div class="card-header fw-bold bg-dark text-white py-2 d-flex justify-content-between align-items-center border-bottom border-warning">
+                    <span class="fs-5"><i class="bi bi-list-check text-warning"></i> <span class="text-warning">DANH SÁCH LỖI</span></span>
+                    <span class="fs-6">
+                        KPI: <span class="badge bg-success fs-5" id="kpi-fixed-count">0</span> / <span id="kpi-total-count">{{ state.initial_error_count }}</span>
+                    </span>
+                </div>
+                <div class="card-body p-0 d-flex flex-column h-100 bg-black" style="overflow: hidden;">
+                    <div id="error-log-list-container">
+                        <ul id="error-log-list" class="list-group list-group-flush fs-6">
+                            </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="repairWorkerModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold fs-3">Chọn Người Sửa Chữa</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-4">
+                    <label class="form-label fw-bold text-dark fs-5">Tìm kiếm (Quét thẻ/Nhập tên):</label>
+                    <input type="text" id="repair-worker-search" class="form-control form-control-lg fs-4" placeholder="Nhập tên nhân viên..." data-vkb style="height: 4.8rem;">
+                    <ul id="repair-worker-results" class="list-group mt-2 position-absolute w-100 shadow fs-5" style="display:none; z-index:1000;">
+                        </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="finishRepairModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h4 class="modal-title fs-3 fw-bold">Xác nhận Hoàn thành</h4>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
+                <p class="fs-3 fw-bold mt-3">Bạn đã hoàn tất sửa chữa cây vải này?</p>
+                <div class="alert alert-info fs-5">
+                    Hệ thống sẽ cập nhật KPI và in tem mới (Trạng thái: Đã sửa).
+                </div>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-secondary btn-lg fs-4" data-bs-dismiss="modal">Quay lại</button>
+                <button type="button" class="btn btn-success btn-lg fs-2 px-5 fw-bold" id="btn-confirm-finish-repair">
+                    XÁC NHẬN
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="subDefectModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h4 class="modal-title fw-bold text-warning fs-3">CHI TIẾT LỖI</h4>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4 bg-black" id="subDefectModalBody"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="pointSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h4 class="modal-title fs-3">Điểm lỗi: <span id="modal-error-type" class="text-warning"></span></h4>
+            </div>
+            <div class="modal-body">
+                <div class="row g-4">
+                    <div class="col-6"><button class="btn btn-outline-success w-100 py-5 fs-1 fw-bold" onclick="selectPoints(1)">1</button></div>
+                    <div class="col-6"><button class="btn btn-outline-warning w-100 py-5 fs-1 fw-bold" onclick="selectPoints(2)">2</button></div>
+                    <div class="col-6"><button class="btn btn-outline-danger w-100 py-5 fs-1 fw-bold" onclick="selectPoints(3)">3</button></div>
+                    <div class="col-6"><button class="btn btn-danger w-100 py-5 fs-1 fw-bold" onclick="selectPoints(4)">4</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="positionSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-info-subtle">
+                <h5 class="modal-title fw-bold text-dark fs-4">Vị trí: <span id="modal-error-type-position"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="position-buttons-2" class="row g-3 d-none">
+                    <div class="col-6"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Trái')">TRÁI</button></div>
+                    <div class="col-6"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Phải')">PHẢI</button></div>
+                </div>
+                <div id="position-buttons-3" class="row g-3 d-none">
+                    <div class="col-4"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Trái')">T</button></div>
+                    <div class="col-4"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Giữa')">G</button></div>
+                    <div class="col-4"><button class="btn btn-outline-primary w-100 py-4 fw-bold fs-2" onclick="selectPosition('Phải')">P</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="liveToast" class="toast" role="alert">
+        <div class="toast-header">
+            <strong class="me-auto fs-3">Thông báo</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body fs-2 text-dark"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+<script id="flis-initial-state" type="application/json">{{ state | tojson | safe }}</script>
+<script>try { window.FLIS_INITIAL_STATE = JSON.parse(document.getElementById('flis-initial-state').textContent); } catch (e) { window.FLIS_INITIAL_STATE = {}; }</script>
+
+<script src="{{ url_for('static', filename='js/inspection_api.js') }}"></script>
+
+<script src="{{ url_for('static', filename='js/inspection_standards.js') }}"></script>
+
+<script src="{{ url_for('static', filename='js/inspection_ui.js') }}"></script>
+
+<script src="{{ url_for('static', filename='js/repair.js') }}"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Kích hoạt bàn phím ảo
+        if (typeof initVirtualKeyboard === 'function') {
+            initVirtualKeyboard('[data-vkb]');
+        }
+        
+        // Các logic khác đã được xử lý bên trong repair.js
+    });
+</script>
+{% endblock %}

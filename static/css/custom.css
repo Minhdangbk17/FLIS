@@ -1,0 +1,212 @@
+/* static/css/custom.css */
+
+/* --- 1. CẤU HÌNH FONT CHỮ & BIẾN TOÀN CỤC --- */
+:root {
+    --bs-body-font-size: 2.25rem; /* Cỡ chữ lớn */
+    
+    /* Màu ngữ nghĩa công nghiệp */
+    --ind-running: #00e676; 
+    --ind-stopped: #ff1744; 
+    --ind-warning: #ff9100; 
+    --ind-dark-bg: #1e1e1e; 
+    --ind-panel-bg: #2d2d2d;
+    --ind-text-light: #e0e0e0;
+    
+    /* Màu Neon cho Dark Mode */
+    --ind-neon-green: #39ff14;
+    --ind-neon-yellow: #ffff33;
+}
+
+body {
+    font-size: var(--bs-body-font-size);
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* Kế thừa font size */
+.btn, .form-control, .form-select, .card-header, .nav-link, .navbar-text, .modal-title, .form-label, .table, .alert {
+    font-size: inherit;
+}
+
+h1, .h1 { font-size: 1.8em; }
+h2, .h2 { font-size: 1.6em; }
+h3, .h3 { font-size: 1.4em; }
+h5, .h5 { font-size: 1.2em; font-weight: 600; }
+
+/* --- 2. CHẾ ĐỘ DARK MODE --- */
+[data-bs-theme="dark"] body {
+    background-color: var(--ind-dark-bg);
+    color: var(--ind-text-light);
+}
+
+[data-bs-theme="dark"] .card {
+    background-color: var(--ind-panel-bg);
+    border-color: #444;
+}
+
+[data-bs-theme="dark"] .card-header {
+    background-color: #383838;
+    border-bottom-color: #555;
+    color: #fff;
+}
+
+[data-bs-theme="dark"] .form-control, 
+[data-bs-theme="dark"] .form-select {
+    background-color: #333;
+    border-color: #555;
+    color: #fff;
+}
+
+[data-bs-theme="dark"] .form-control:focus {
+    background-color: #404040;
+    border-color: var(--ind-running);
+    color: #fff;
+}
+
+[data-bs-theme="dark"] .table {
+    color: var(--ind-text-light);
+    border-color: #444;
+}
+
+[data-bs-theme="dark"] .modal-content {
+    background-color: var(--ind-panel-bg);
+    border: 1px solid #555;
+}
+
+/* --- 3. DARK MODE CHO NÚT LỖI (Neon Styles) --- */
+
+/* Layer 1: Lưới lỗi chính (Màu Xanh Neon) */
+[data-bs-theme="dark"] .defect-grid .btn {
+    background-color: transparent;
+    border-color: var(--ind-neon-green);
+    color: var(--ind-neon-green);
+    font-weight: bold;
+    text-shadow: 0 0 5px rgba(57, 255, 20, 0.5);
+    box-shadow: inset 0 0 5px rgba(57, 255, 20, 0.2);
+    transition: all 0.15s ease-in-out;
+}
+
+[data-bs-theme="dark"] .defect-grid .btn:hover,
+[data-bs-theme="dark"] .defect-grid .btn:active {
+    background-color: var(--ind-neon-green);
+    color: #000;
+    box-shadow: 0 0 15px rgba(57, 255, 20, 0.8);
+    transform: scale(0.98);
+}
+
+/* Layer 2: Modal Chi tiết lỗi (Màu Vàng Neon) */
+[data-bs-theme="dark"] #subDefectModal .modal-body button {
+    background-color: transparent;
+    border-color: var(--ind-neon-yellow);
+    color: var(--ind-neon-yellow);
+    font-weight: bold;
+    text-shadow: 0 0 5px rgba(255, 255, 51, 0.5);
+    box-shadow: inset 0 0 5px rgba(255, 255, 51, 0.2);
+}
+
+[data-bs-theme="dark"] #subDefectModal .modal-body button:hover,
+[data-bs-theme="dark"] #subDefectModal .modal-body button:active {
+    background-color: var(--ind-neon-yellow);
+    color: #000;
+    box-shadow: 0 0 15px rgba(255, 255, 51, 0.8);
+}
+
+/* --- 4. UI CÔNG NGHIỆP & BUTTON UNIFORM --- */
+
+.btn-fat {
+    min-height: 80px;
+    font-size: 1.2em;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+}
+
+/* Class mới: Đồng bộ kích thước nút lỗi */
+.btn-defect-uniform {
+    min-height: 100px;
+    height: 100%; /* Lấp đầy chiều cao cột */
+    font-size: 1.1em;
+    white-space: normal;
+    line-height: 1.2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border-width: 2px;
+    margin-bottom: 0; /* Bootstrap grid sẽ lo khoảng cách */
+}
+
+.menu-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    border: 2px solid transparent;
+}
+.menu-card:active {
+    transform: scale(0.98);
+}
+.menu-card .card-body i {
+    font-size: 5rem;
+    margin-bottom: 1rem;
+}
+
+.status-badge {
+    font-size: 1.2em;
+    padding: 0.5em 1em;
+    border-radius: 4px;
+}
+.bg-status-running {
+    background-color: var(--ind-running) !important;
+    color: #000 !important;
+}
+.bg-status-stopped {
+    background-color: var(--ind-stopped) !important;
+    color: #fff !important;
+}
+.bg-status-warning {
+    background-color: var(--ind-warning) !important;
+    color: #000 !important;
+}
+
+/* --- 5. BÀN PHÍM ẢO (Tăng X2) --- */
+.simple-keyboard {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    background-color: #ececec;
+    padding-bottom: 10px;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+    
+    transform: scale(2.0); 
+    transform-origin: bottom center;
+    margin-bottom: 0;
+    width: 50%; 
+    left: 25%; 
+}
+
+[data-bs-theme="dark"] .simple-keyboard {
+    background-color: #2d2d2d;
+    color: #fff;
+}
+[data-bs-theme="dark"] .hg-button {
+    background: #444;
+    color: #fff;
+    border-bottom-color: #222;
+    height: 60px;
+    font-size: 1.5rem;
+}
+[data-bs-theme="dark"] .hg-button:active {
+    background: var(--ind-running);
+    color: #000;
+}
+
+/* --- 6. NUMPAD --- */
+.numpad-btn {
+    height: 120px;
+    font-size: 2rem;
+    font-weight: bold;
+}

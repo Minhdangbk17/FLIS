@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Hệ thống FLIS{% endblock %}</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/simple-keyboard@latest/build/css/index.css">
+    
+    <style>
+        /* 1. BASE SETTINGS - TĂNG SCALE LÊN 1.5 LẦN */
+        /* Root font-size 30px -> Mọi đơn vị rem sẽ rất to */
+        html { font-size: 30px; } 
+        
+        body { 
+            transition: background-color 0.3s, color 0.3s; 
+            font-weight: 500;
+        }
+        
+        .btn-fat { font-weight: bold; font-size: 1.2rem; text-transform: uppercase; padding-top: 0.8rem; padding-bottom: 0.8rem; }
+        [data-vkb] { cursor: pointer; }
+
+        /* --- GLOBAL OVERRIDES: XÓA BỎ MÀU XÁM --- */
+        .text-muted { 
+            color: #00d2ff !important; 
+            font-weight: bold !important;
+            opacity: 1 !important;
+        }
+        
+        /* 2. DARK MODE CSS - CYBERPUNK / INDUSTRIAL THEME */
+        body.dark-mode {
+            background-color: #000000 !important;
+            color: #ffffff !important;
+        }
+
+        body.dark-mode .text-dark, 
+        body.dark-mode .text-body,
+        body.dark-mode .text-black,
+        body.dark-mode h1, body.dark-mode h2, body.dark-mode h3, 
+        body.dark-mode h4, body.dark-mode h5, body.dark-mode h6 {
+            color: #ffffff !important;
+        }
+
+        body.dark-mode a:not(.btn) { color: #00d2ff; }
+
+        /* COMPONENTS OVERRIDE */
+        .dark-mode .card, .dark-mode .list-group-item {
+            background-color: #050505;
+            border: 1px solid #00e676; 
+            color: #fff;
+        }
+        .dark-mode .card-header {
+            background-color: #1a1a1a !important;
+            border-bottom: 2px solid #00e676;
+            color: #00e676 !important;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        
+        .dark-mode .form-control, .dark-mode .form-select {
+            background-color: #000;
+            border: 1px solid #00d2ff;
+            color: #00e676;
+            font-weight: bold;
+        }
+        .dark-mode .form-control::placeholder { color: #005c4b; }
+        .dark-mode .input-group-text { background-color: #1a1a1a; border-color: #00d2ff; color: #00d2ff; }
+
+        .dark-mode .table { color: #fff; --bs-table-color: #fff; --bs-table-bg: transparent; border-color: #00e676; }
+        .dark-mode .table-light { background-color: #1a1a1a; color: #00e676; border-color: #00e676; }
+        
+        .dark-mode .modal-content { 
+            background-color: #000; 
+            border: 2px solid #fff; 
+            box-shadow: 0 0 15px rgba(0, 230, 118, 0.2);
+            color: #fff; 
+        }
+        .dark-mode .modal-header, .dark-mode .modal-footer { border-color: #333; }
+        .dark-mode .btn-close { background-color: #fff; opacity: 1; }
+
+        .dark-mode .navbar { background-color: #000 !important; border-bottom: 2px solid #00e676; }
+        .dark-mode .bg-light, .dark-mode .bg-body-secondary { background-color: #111 !important; }
+
+        /* --- VIRTUAL KEYBOARD STYLES (NEON/INDUSTRIAL) --- */
+        .simple-keyboard-container {
+            position: fixed; bottom: 0; left: 0; width: 100%; z-index: 9999;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.8);
+        }
+        .simple-keyboard {
+            background-color: #050505 !important;
+            border-top: 3px solid #00e676 !important;
+            padding-bottom: 15px;
+        }
+        .simple-keyboard .hg-button {
+            background-color: #1a1a1a !important;
+            color: #00e676 !important;
+            border-bottom: 3px solid #005c4b !important;
+            font-weight: bold;
+            font-size: 1.5rem !important; /* Chữ phím to */
+            height: 90px !important; /* Phím cao cho dễ bấm */
+            margin: 5px !important;
+        }
+        .simple-keyboard .hg-button:active, 
+        .simple-keyboard .hg-button:hover {
+            background-color: #00e676 !important;
+            color: #000 !important;
+            transform: translateY(2px);
+        }
+        .simple-keyboard .hg-functionBtn {
+            background-color: #222 !important;
+            color: #00d2ff !important;
+        }
+        .simple-keyboard .hg-button-enter {
+            background-color: #00e676 !important;
+            color: #000 !important;
+        }
+        .simple-keyboard .hg-button-bksp {
+            background-color: #d32f2f !important;
+            color: #fff !important;
+        }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm" style="height: 105px;">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold fs-4" href="{{ url_for('main.home') }}">
+                <i class="bi bi-layers-fill text-warning"></i> FLIS 3.4
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon" style="width: 2em; height: 2em;"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item"><a class="nav-link fs-5" href="{{ url_for('main.select_machine') }}">Chọn Máy</a></li>
+                    <li class="nav-item"><a class="nav-link fs-5" href="{{ url_for('main.manage_pallets_page') }}">Pallet</a></li>
+                    <li class="nav-item"><a class="nav-link fs-5" href="{{ url_for('main.production_report') }}">Báo cáo</a></li>
+                    {% endif %}
+                </ul>
+                
+                <ul class="navbar-nav align-items-center">
+                    <li class="nav-item me-3">
+                        <button class="btn btn-outline-light rounded-circle" id="darkModeToggle" style="width: 60px; height: 60px;">
+                            <i class="bi bi-moon-stars-fill fs-4" id="darkModeIcon"></i>
+                        </button>
+                    </li>
+
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle active fs-5" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle"></i> {{ current_user.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item fs-5" href="#">Hồ sơ</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger fs-5" href="{{ url_for('auth.logout') }}">
+                                <i class="bi bi-box-arrow-right"></i> Đăng xuất
+                            </a></li>
+                        </ul>
+                    </li>
+                    {% else %}
+                    <li class="nav-item"><a class="nav-link fs-5" href="{{ url_for('auth.login') }}">Đăng nhập</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-3">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show py-3 fs-5" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close py-3" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    {% block content %}{% endblock %}
+
+    <div class="simple-keyboard-container" style="display: none;">
+        <div class="simple-keyboard"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/simple-keyboard@latest/build/index.js"></script>
+    <script src="{{ url_for('static', filename='js/virtual_keyboard.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleBtn = document.getElementById('darkModeToggle');
+            const icon = document.getElementById('darkModeIcon');
+            const body = document.body;
+
+            const savedTheme = localStorage.getItem('flis_theme');
+            if (savedTheme === 'dark') {
+                enableDarkMode();
+            } else if (savedTheme === 'light') {
+                disableDarkMode();
+            } else {
+                enableDarkMode(); 
+            }
+
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', () => {
+                    if (body.classList.contains('dark-mode')) {
+                        disableDarkMode();
+                    } else {
+                        enableDarkMode();
+                    }
+                });
+            }
+
+            function enableDarkMode() {
+                body.classList.add('dark-mode');
+                if(icon) {
+                    icon.classList.remove('bi-moon-stars-fill');
+                    icon.classList.add('bi-sun-fill');
+                }
+                localStorage.setItem('flis_theme', 'dark');
+            }
+
+            function disableDarkMode() {
+                body.classList.remove('dark-mode');
+                if(icon) {
+                    icon.classList.remove('bi-sun-fill');
+                    icon.classList.add('bi-moon-stars-fill');
+                }
+                localStorage.setItem('flis_theme', 'light');
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

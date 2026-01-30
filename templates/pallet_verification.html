@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+{% block title %}Xác minh Pallet{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h2 class="text-center mb-4">Xác minh Pallet</h2>
+            
+            <div class="card shadow-sm mb-4">
+                <div class="card-header fw-bold">Quét Mã Vạch Pallet</div>
+                <div class="card-body">
+                    <label for="barcode-input" class="form-label">Sử dụng máy quét mã vạch của bạn, hoặc nhập mã Pallet và nhấn Enter:</label>
+                    <input type="text" id="barcode-input" class="form-control form-control-lg" placeholder="Chờ quét mã...">
+                    <p id="status-message" class="mt-2 mb-0 text-muted">Chưa quét mã nào.</p>
+                </div>
+            </div>
+            
+            <div class="card shadow-sm">
+                <div class="card-header fw-bold">Thông tin Pallet</div>
+                <div class="card-body">
+                    <div class="mb-2 row">
+                        <label class="col-sm-4 col-form-label">Mã Pallet:</label>
+                        <div class="col-sm-8">
+                            <input type="text" readonly class="form-control-plaintext" id="pallet-id" value="N/A">
+                        </div>
+                    </div>
+                    <div class="mb-2 row">
+                        <label class="col-sm-4 col-form-label">Ngày tạo:</label>
+                        <div class="col-sm-8">
+                            <input type="text" readonly class="form-control-plaintext" id="pallet-date" value="">
+                        </div>
+                    </div>
+                    <div class="mb-2 row">
+                        <label class="col-sm-4 col-form-label">Người tạo:</label>
+                        <div class="col-sm-8">
+                            <input type="text" readonly class="form-control-plaintext" id="pallet-operator" value="">
+                        </div>
+                    </div>
+                     <div class="mb-2 row">
+                        <label class="col-sm-4 col-form-label">Trạng thái:</label>
+                        <div class="col-sm-8">
+                            <input type="text" readonly class="form-control-plaintext" id="pallet-status" value="">
+                        </div>
+                    </div>
+                    <hr>
+                    <h5>Danh sách cây vải (<span id="roll-count">0</span>)</h5>
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        <ul id="roll-list" class="list-group list-group-flush">
+                            </ul>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // === LẤY CÁC THÀNH PHẦN GIAO DIỆN ===
+    const barcodeInput = document.getElementById('barcode-input');
+    const statusMessage = document.getElementById('status-message');
+
+    const palletIdElem = document.getElementById('pallet-id');
+    const palletDateElem = document.getElementById('pallet-date');
+    const palletOperatorElem = document.getElementById('pallet-operator');
+    const palletStatusElem = document.getElementById('pallet-status');
+    const rollListElem = document.getElementById('roll-list');
+    const rollCountElem = document.getElementById('roll-count');
+
+    let lastScannedId = null;
+
+    // === TỰ ĐỘNG FOCUS VÀO Ô INPUT KHI TẢI TRANG ===
+    document.addEventListener('DOMContentLoaded', function() {
+        barcodeInput.focus();
+        // Giữ focus vào ô input ngay cả khi click ra ngoài
+        barcodeInput.onblur = function() {
+            setTimeout(() => barcodeInput.focus(), 0);
+        };
+    });
+
+    // === LẮNG NGHE SỰ KIỆN QUÉT MÃ (NHẤN ENTER) ===
+    barcodeInput.addEventListener('change', function(event) {
+        const palletId = event.target.value.trim();
+        
+        if (palletId && palletId !== lastScannedId) {
+            console.log("Đã quét:", palletId);
+            lastScannedId = palletId;
+            fetchAndDisplayPalletInfo(palletId);
+        }
+        
+        // Xóa và focus lại để chuẩn bị cho lần quét tiếp theo
+        event.target.value = '';
+        event.target.focus();
+    });
+
+    // === CÁC HÀM XỬ LÝ DỮ LIỆU ===
+
+    // Hàm cập nhật trạng thái
+    function updateStatus(message, isError = false) {
+        statusMessage.textContent = message;
+        statusMessage.className = isError ? 'mt-2 text-danger' : 'mt-2 text-success';
+    }
+
+    // Hàm xóa thông tin
+    function clearInfo() {
+        palletIdElem.value = 'N/A';
+        palletDateElem.value = '';
+        palletOperatorElem.value = '';
+        palletStatusElem.value = '';
+        rollListElem.innerHTML = ''; // Xóa danh sách
+        rollCountElem.textContent = '0';
+    }
+
+    // Hàm hiển thị thông tin Pallet
+    async function fetchAndDisplayPalletInfo(palletId) {
+        if (!palletId) return;
+        updateStatus(`Đang tải thông tin Pallet: ${palletId}...`);
+        clearInfo(); // Xóa thông tin cũ trước khi tải
+
+        try {
+            // API này bạn cần tạo bên phía Flask
+            const response = await fetch(`/api/get_pallet_all_details/${palletId}`);
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || `Lỗi HTTP ${response.status}`);
+            }
+            const data = await response.json(); // { details: {...}, rolls: [...] }
+
+            // Hiển thị thông tin chi tiết
+            if (data.details) {
+                palletIdElem.value = data.details.pallet_id || 'Lỗi';
+                palletDateElem.value = data.details.creation_date ? new Date(data.details.creation_date).toLocaleDateString('vi-VN') : '';
+                palletOperatorElem.value = data.details.operator_name || '';
+                let statusDisplay = data.details.status || 'N/A';
+                statusDisplay = statusDisplay === 'EXPORTED' ? 'Đã Khóa' : (statusDisplay === 'OPEN' ? 'Đang Mở' : statusDisplay);
+                palletStatusElem.value = statusDisplay;
+            } else {
+                 palletIdElem.value = 'Không có chi tiết';
+            }
+
+            // Hiển thị danh sách rolls
+            rollListElem.innerHTML = ''; // Xóa sạch trước
+            let count = 0;
+            if (data.rolls && Array.isArray(data.rolls)) {
+                count = data.rolls.length;
+                data.rolls.forEach(roll => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    
+                    // === SỬA LỖI (KHẮC PHỤC XUNG ĐỘT 4) ===
+                    // (Dựa trên roll_columns trong routes.py)
+                    li.textContent = `${roll.roll_number || 'N/A'} (${roll.fabric_name || 'N/A'})`;
+                    
+                    const span = document.createElement('span');
+                    span.className = 'badge bg-primary rounded-pill';
+                    
+                    // === SỬA LỖI (KHẮC PHỤC XUNG ĐỘT 4) ===
+                    span.textContent = `${roll.meters ? roll.meters.toFixed(2) : '0.00'} m`;
+                    
+                    li.appendChild(span);
+                    rollListElem.appendChild(li);
+                });
+            }
+            rollCountElem.textContent = count.toString();
+            updateStatus(`Hiển thị thông tin Pallet: ${palletId}`, false);
+
+        } catch (error) {
+            console.error('Lỗi khi tải thông tin Pallet:', error);
+            updateStatus(`Lỗi: ${error.message}`, true);
+            clearInfo();
+            palletIdElem.value = `Lỗi tải ${palletId}`;
+            lastScannedId = null; // Cho phép quét lại mã lỗi
+        }
+    }
+</script>
+{% endblock %}

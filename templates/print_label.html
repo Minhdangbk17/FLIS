@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>In Tem Compact - {{ ticket.ticket_id }}</title>
+    <style>
+        @page {
+            size: 100mm 60mm;
+            margin: 0; 
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            width: 100mm;
+            height: 60mm;
+            /* Giảm padding body xuống tối thiểu an toàn */
+            padding: 1mm 2mm; 
+            box-sizing: border-box;
+            overflow: hidden; /* Cắt bỏ phần thừa nếu có */
+        }
+        
+        .label-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            /* Flex space-between sẽ tự đẩy Footer xuống đáy */
+            justify-content: space-between; 
+        }
+
+        /* --- 1. HEADER (Cao tối đa 14mm) --- */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #000;
+            height: 14mm; 
+            padding-bottom: 1mm;
+            flex-shrink: 0;
+        }
+        .header-left {
+            font-size: 10pt; /* Giảm size phụ */
+            font-weight: bold;
+            line-height: 1.1;
+            width: 25%;
+        }
+        .header-center {
+            font-size: 16pt; /* Title to rõ */
+            font-weight: 900;
+            text-transform: uppercase;
+            text-align: center;
+            flex-grow: 1;
+            line-height: 1;
+        }
+        .header-right {
+            width: 15mm; /* Chỗ cho QR */
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        /* --- 2. INFO SECTION (Phần giữa) --- */
+        .info-section {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            /* Dàn đều nội dung trong khoảng trống còn lại */
+            justify-content: space-evenly; 
+            padding: 1mm 0;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            line-height: 1.1; /* Ép dòng sát lại */
+        }
+        
+        .fabric-name {
+            font-size: 14pt; /* Vẫn giữ to cho dễ đọc */
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .ticket-id { font-size: 12pt; font-weight: bold; }
+        .info-value { font-size: 12pt; font-weight: bold; }
+        .info-label { font-size: 11pt; }
+        .info-data { font-size: 12pt; font-weight: bold; }
+
+        /* --- 3. FOOTER BOX (Tiết kiệm diện tích nhất) --- */
+        /* Thay đổi chiến thuật: Chia đôi hộp. Trái: Tổng, Phải: L1/L2 */
+        .meters-box {
+            display: flex;
+            border: 2px solid #000;
+            height: 14mm; /* Chiều cao cố định cho footer */
+            flex-shrink: 0;
+        }
+        
+        /* Cột bên trái: Tổng mét (Nền đen) */
+        .box-total {
+            background-color: #000;
+            color: #fff;
+            width: 60%; /* Chiếm 60% diện tích */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .total-label { font-size: 10pt; font-weight: normal; }
+        .total-value { font-size: 18pt; font-weight: bold; line-height: 1; }
+
+        /* Cột bên phải: L1 và L2 (Nền trắng) */
+        .box-details {
+            width: 40%;
+            display: flex;
+            flex-direction: column;
+        }
+        .detail-row {
+            flex: 1; /* Chia đều chiều cao */
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 2mm;
+            font-size: 11pt;
+            font-weight: bold;
+        }
+        .detail-row:first-child {
+            border-bottom: 1px solid #000;
+        }
+
+        @media print {
+            .meters-box { border: 2px solid #000; }
+        }
+    </style>
+</head>
+<body onload="generateQRAndPrint()">
+    <div class="label-container">
+        
+        <div class="header">
+            <div class="header-left">
+                TCT 28<br>XN DỆT
+            </div>
+            <div class="header-center">
+                PHIẾU<br>KIỂM VẢI
+            </div>
+            <div class="header-right">
+                <div id="qrcode"></div>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <div class="info-row">
+                <span class="ticket-id">{{ ticket.ticket_id }}</span>
+                <span class="info-value">{{ ticket.formatted_date }}</span>
+            </div>
+
+            <div class="info-row">
+                <span class="fabric-name">{{ ticket.fabric_name }}</span>
+            </div>
+
+            <div class="info-row">
+                <span class="info-label">LSX: <b class="info-data">{{ ticket.order_number }}</b></span>
+                <span class="info-label">Máy: <b class="info-data">{{ ticket.machine_id }}</b></span>
+            </div>
+        </div>
+
+        <div class="meters-box">
+            <div class="box-total">
+                <span class="total-value">TỔNG: {{ "%.2f"|format(ticket.total_meters|float) }} M</span>
+            </div>
+            
+            <div class="box-details">
+                <div class="detail-row">
+                    <span>L1:</span>
+                    <span>{{ "%.2f"|format(ticket.total_grade_1|float) }}</span>
+                </div>
+                <div class="detail-row">
+                    <span>L2:</span>
+                    <span>{{ "%.2f"|format(ticket.total_grade_2|float) }}</span>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
+    <script>
+        function generateQRCode(ticketId) {
+            document.getElementById("qrcode").innerHTML = "";
+            new QRCode(document.getElementById("qrcode"), {
+                text: ticketId,
+                width: 52,  /* 52px = ~13-14mm, vừa khít header */
+                height: 52,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.L
+            });
+        }
+
+        function generateQRAndPrint() {
+            const ticketId = "{{ ticket.ticket_id }}";
+            if (ticketId) {
+                generateQRCode(ticketId);
+            }
+            setTimeout(() => {
+                window.print();
+            }, 500);
+        }
+    </script>
+</body>
+</html>

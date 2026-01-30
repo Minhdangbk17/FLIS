@@ -1,0 +1,23 @@
+# --- Virtual Environment (QUAN TRỌNG: Chặn thư viện nặng) ---
+Lib/
+Scripts/
+share/
+pyvenv.cfg
+venv/
+env/
+
+# --- Database & Dữ liệu (Chỉ quản lý code, không quản lý data) ---
+*.db
+*.sqlite3
+flis_local.db
+
+# --- Logs & Rác ---
+logs/
+*.log
+__pycache__/
+*.py[cod]
+
+# --- Bảo mật & Cấu hình máy cá nhân ---
+.env
+.vscode/
+CACHEDIR.TAG# created by virtualenv automatically

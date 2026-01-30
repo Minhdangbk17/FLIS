@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Pallet {{ data.details.pallet_id }}</title>
+    
+    <!-- Thư viện tạo mã vạch -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <!-- Bootstrap Icons (cho nút bấm đẹp hơn) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <style>
+        /* --- CẤU HÌNH TRANG IN --- */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #525659; /* Màu nền tối giống trình xem PDF */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Thanh công cụ (Chỉ hiện trên màn hình) */
+        .control-bar {
+            width: 100%;
+            background-color: #323639;
+            color: white;
+            padding: 10px 0;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-print {
+            background-color: #4CAF50; /* Xanh lá */
+            color: white;
+        }
+        .btn-print:hover { background-color: #45a049; }
+
+        .btn-close {
+            background-color: #f44336; /* Đỏ */
+            color: white;
+        }
+        .btn-close:hover { background-color: #da190b; }
+
+        /* Trang giấy A4 */
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 15mm 20mm;
+            margin: 0 auto 30px auto;
+            background: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        /* ----- Header Table ----- */
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10mm;
+        }
+        .header-table td {
+            vertical-align: top;
+            padding: 0;
+        }
+        .company-info {
+            text-align: center;
+            width: 70mm;
+        }
+        .motto { font-size: 11pt; text-transform: uppercase; }
+        .company-name { font-size: 11pt; font-weight: bold; text-transform: uppercase; margin-top: 2px; }
+        .form-code {
+            border: 1px solid black;
+            padding: 5px 10px;
+            font-size: 10pt;
+            display: inline-block;
+        }
+        .align-right { text-align: right; }
+
+        /* ----- Main Title ----- */
+        .main-title {
+            font-size: 20pt;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 8mm;
+            text-transform: uppercase;
+        }
+
+        /* ----- Info Section ----- */
+        .info-row {
+            font-size: 11pt;
+            margin-bottom: 5mm;
+        }
+
+        /* ----- Pallet ID & Barcodes ----- */
+        .pallet-id-table {
+            width: 100%;
+            margin-bottom: 5mm;
+        }
+        .pallet-id-table td {
+            vertical-align: middle;
+        }
+        .pallet-text {
+            font-size: 14pt;
+            font-weight: bold;
+        }
+        .barcode-cell { text-align: right; }
+        .qr-cell { text-align: center; width: 40mm; }
+
+        /* ----- Roll Table ----- */
+        .roll-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10pt;
+        }
+        .roll-table th, .roll-table td {
+            border: 1px solid black;
+            padding: 6px;
+        }
+        .roll-table th {
+            background-color: #f0f0f0;
+            text-align: center;
+            font-weight: bold;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .total-row {
+            background-color: #e8f5e9; /* Xanh nhạt */
+            font-weight: bold;
+        }
+
+        /* ----- Signature Section ----- */
+        .signature-section {
+            margin-top: 15mm;
+            page-break-inside: avoid; /* Tránh bị ngắt trang giữa chừng */
+        }
+        .date-line {
+            text-align: right;
+            font-style: italic;
+            font-size: 11pt;
+            margin-bottom: 5mm;
+            padding-right: 10mm;
+        }
+        .signature-table {
+            width: 100%;
+            text-align: center;
+            font-size: 11pt;
+            font-weight: bold;
+        }
+        .signature-table td {
+            padding-bottom: 25mm; /* Khoảng trống ký tên */
+        }
+
+        /* ----- CẤU HÌNH KHI IN (QUAN TRỌNG) ----- */
+        @media print {
+            body {
+                background-color: white;
+                margin: 0;
+            }
+            .control-bar {
+                display: none !important; /* Ẩn thanh công cụ */
+            }
+            .page {
+                margin: 0;
+                box-shadow: none;
+                border: none;
+                width: 100%;
+                padding: 10mm; /* Padding giấy in */
+            }
+            @page {
+                size: A4;
+                margin: 0; /* Để CSS kiểm soát margin */
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Thanh công cụ: Giúp người dùng thao tác mà không cần menu chuột phải -->
+    <div class="control-bar">
+        <button class="btn btn-print" onclick="window.print()">
+            <i class="bi bi-printer-fill"></i> In Ngay
+        </button>
+        <button class="btn btn-close" onclick="window.close()">
+            <i class="bi bi-x-circle-fill"></i> Đóng
+        </button>
+    </div>
+
+    <div class="page">
+        <!-- Header -->
+        <table class="header-table">
+            <tr>
+                <td>
+                    <div class="company-info">
+                        <div class="motto">TỔNG CÔNG TY 28</div>
+                        <div class="company-name">XÍ NGHIỆP DỆT</div>
+                    </div>
+                </td>
+                <td class="align-right">
+                    <div class="form-code">MB-WM 05/7.5-03</div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Title -->
+        <div class="main-title">BẢNG KÊ CHI TIẾT VẢI MỘC</div>
+
+        <!-- Fabric Info -->
+        <div class="info-row">
+            <b>Tên Vải:</b> {{ data.main_fabric_name }} 
+            <span style="float: right;"><b>Khổ Vải (cm):</b> {{ data.finished_width_cm }}</span>
+        </div>
+
+        <!-- Barcodes -->
+        <table class="pallet-id-table">
+            <tr>
+                <td class="pallet-text">MÃ PALLET: {{ data.details.pallet_id }}</td>
+                <td class="qr-cell"><div id="qrcode"></div></td>
+                <td class="barcode-cell"><svg id="barcode"></svg></td>
+            </tr>
+        </table>
+
+        <!-- Data Table -->
+        <table class="roll-table">
+            <thead>
+                <tr>
+                    <th style="width: 10mm;">STT</th>
+                    <th style="width: 35mm;">Số Cây vải</th>
+                    <th>Tổng số mét</th>
+                    <th>Loại I (m)</th>
+                    <th>Loại II (m)</th>
+                    <th style="width: 20mm;">Nhập kho</th>
+                    <th>Ghi chú</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set totals = {'meters': 0, 'g1': 0, 'g2': 0} %}
+                {% for roll in data.rolls %}
+                    {% set meters = roll.total_meters | float %}
+                    {% set g1 = roll.meters_grade1 | float %}
+                    {% set g2 = roll.meters_grade2 | float %}
+                    
+                    {% set _ = totals.update({'meters': totals.meters + meters}) %}
+                    {% set _ = totals.update({'g1': totals.g1 + g1}) %}
+                    {% set _ = totals.update({'g2': totals.g2 + g2}) %}
+                <tr>
+                    <td class="text-center">{{ loop.index }}</td>
+                    <td class="text-center">{{ roll.roll_number }}</td>
+                    <td class="text-right">{{ "%.2f"|format(meters) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(g1) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(g2) }}</td>
+                    <td class="text-center">Chưa</td>
+                    <td></td>
+                </tr>
+                {% endfor %}
+                
+                <tr class="total-row">
+                    <td colspan="2" class="text-center">TỔNG CỘNG</td>
+                    <td class="text-right">{{ "%.2f"|format(totals.meters) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(totals.g1) }}</td>
+                    <td class="text-right">{{ "%.2f"|format(totals.g2) }}</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Signature -->
+        <div class="signature-section">
+            {% set dt = data.details.creation_date %}
+            <div class="date-line">
+                TP.HCM, ngày {{ "%02d"|format(dt.day) }} tháng {{ "%02d"|format(dt.month) }} năm {{ dt.year }}
+            </div>
+            <table class="signature-table">
+                <tr>
+                    <td>NV THỐNG KÊ XN</td>
+                    <td>NGƯỜI NHẬN</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            const palletId = "{{ data.details.pallet_id }}";
+
+            // 1. Tạo Barcode (Code128)
+            try {
+                JsBarcode("#barcode", palletId, {
+                    format: "CODE128",
+                    displayValue: false, 
+                    margin: 0,
+                    height: 50,
+                    width: 2
+                });
+            } catch (e) { console.error("Lỗi Barcode:", e); }
+
+            // 2. Tạo QR Code
+            try {
+                const qr = qrcode(0, 'L');
+                qr.addData(palletId);
+                qr.make();
+                document.getElementById("qrcode").innerHTML = qr.createImgTag(4, 0);
+            } catch (e) { console.error("Lỗi QR:", e); }
+
+            // 3. Tự động mở hộp thoại in (nhưng KHÔNG tự đóng)
+            setTimeout(() => {
+                window.print();
+            }, 500);
+        };
+    </script>
+</body>
+</html>
