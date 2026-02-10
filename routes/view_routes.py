@@ -1,4 +1,4 @@
-# --- File: routes/view_routes.py (FULL & UPDATED) ---
+# --- File: routes/view_routes.py (FULL & FIXED RACE CONDITION) ---
 import uuid
 import re
 from datetime import datetime
@@ -8,11 +8,12 @@ from flask_login import login_required, current_user
 from state_manager import state_manager
 from local_db_manager import local_db_manager 
 from services.machine_service import machine_service
-from services.standard_service import standard_service # [CRITICAL] Import service này để lấy ID bộ lỗi
+from services.standard_service import standard_service 
 from services.pallet_service import pallet_service
 from services.report_service import report_service
 from services.user_service import user_service
-from services.inspection_service import inspection_service 
+from services.inspection_service import inspection_service
+from services.redis_manager import redis_manager # [NEW] Import để xử lý Atomic Sequence
 from . import view_bp
 
 # --- Helper ---
@@ -96,25 +97,41 @@ def inspection_page():
     fabric_name = validation_data['fabric_name'] if validation_data else "Unknown"
     order_number = validation_data['order_number'] if validation_data else "N/A"
 
-    # 2. Xử lý logic sinh Roll Code
+    # 2. Xử lý logic sinh Roll Code (REFACTORED for ATOMICITY)
     now = datetime.now()
     yy = now.strftime('%y')
     mm = now.strftime('%m')
     
-    # [UPDATED LOGIC]
     item_identifier = _extract_item_identifier(fabric_name)
     prefix = f"{yy}{mm}{item_identifier}"
 
-    # Bước 1: Thử lấy sequence từ Server
-    sequence = inspection_service.get_next_sequence_from_server(prefix)
+    sequence = None
+    try:
+        # [PRIORITY 1] Atomic Increment via Redis
+        # Redis đảm bảo tính duy nhất, trả về ngay số tiếp theo (có thể là string '0001')
+        sequence = redis_manager.get_next_roll_sequence(prefix)
+    except Exception as e:
+        current_app.logger.error(f"REDIS SEQUENCE ERROR: {e}")
+        # [PRIORITY 2] Fallback to Server DB (Old Method)
+        # Nếu Redis chết, gọi API cũ để lấy số từ Database (thường trả về int)
+        try:
+            sequence = inspection_service.get_next_sequence_from_server(prefix)
+        except Exception as db_err:
+             current_app.logger.error(f"DB SEQUENCE ERROR: {db_err}")
 
-    # Bước 2: Nếu Server Offline (None), lấy từ Local DB
+    # [PRIORITY 3] Local DB Fallback (Khi mất mạng hoàn toàn)
     if sequence is None:
         sequence = local_db_manager.get_next_sequence_by_prefix(prefix)
         if not sequence: sequence = 1
 
     # Format: Prefix + 4 số thứ tự
-    roll_code = f"{prefix}{sequence:04d}"
+    # Lưu ý: Ép kiểu int(sequence) trước khi format để tránh lỗi nếu Redis trả về string
+    try:
+        seq_int = int(sequence)
+        roll_code = f"{prefix}{seq_int:04d}"
+    except (ValueError, TypeError):
+        # Fallback an toàn nếu sequence bị lỗi định dạng lạ
+        roll_code = f"{prefix}{str(sequence).zfill(4)}"
 
     # 3. Khởi tạo Session
     state_manager.start_session_v2(
@@ -149,7 +166,7 @@ def start_manual_inspection():
 
     ticket_id = str(uuid.uuid4())
     
-    # Logic sinh mã cho Manual
+    # Logic sinh mã cho Manual (REFACTORED for ATOMICITY)
     now = datetime.now()
     yy = now.strftime('%y')
     mm = now.strftime('%m')
@@ -157,12 +174,29 @@ def start_manual_inspection():
     item_identifier = _extract_item_identifier(fabric_name)
     prefix = f"{yy}{mm}{item_identifier}"
     
-    sequence = inspection_service.get_next_sequence_from_server(prefix)
+    sequence = None
+    try:
+        # [PRIORITY 1] Atomic Increment via Redis
+        sequence = redis_manager.get_next_roll_sequence(prefix)
+    except Exception as e:
+        current_app.logger.error(f"REDIS SEQUENCE ERROR (MANUAL): {e}")
+        # [PRIORITY 2] Fallback to Server DB
+        try:
+            sequence = inspection_service.get_next_sequence_from_server(prefix)
+        except Exception:
+            pass
+
+    # [PRIORITY 3] Fallback to Local DB
     if sequence is None:
         sequence = local_db_manager.get_next_sequence_by_prefix(prefix)
         if not sequence: sequence = 1
             
-    roll_code = f"{prefix}{sequence:04d}"
+    # Format mã cây
+    try:
+        seq_int = int(sequence)
+        roll_code = f"{prefix}{seq_int:04d}"
+    except (ValueError, TypeError):
+        roll_code = f"{prefix}{str(sequence).zfill(4)}"
 
     state_manager.start_manual_session(
         station_id=station_id, ticket_id=ticket_id, inspector_id=current_user.id,
@@ -207,14 +241,12 @@ def repair_session(roll_id):
     main_info = roll_data['main']
     existing_errors = roll_data['errors']
 
-    # 2. Thông tin người sửa (UPDATED: Không gán mặc định nữa)
-    # [FIX] Đặt là None để yêu cầu user phải chọn lại
+    # 2. Thông tin người sửa
     repair_worker = None
 
-    # 3. [NEW] Lấy Standard ID mặc định (Để vẽ nút lỗi trên giao diện sửa)
-    # Nếu không có standard_id trong state, JS sẽ không biết load nút nào để vẽ
+    # 3. Lấy Standard ID mặc định
     default_std = standard_service.get_default_standard()
-    standard_id = default_std.get('id') if default_std else 1 # Fallback ID 1 nếu chưa set default
+    standard_id = default_std.get('id') if default_std else 1 
 
     # 4. Khởi tạo State trong RAM
     state_manager.start_repair_session(
@@ -224,18 +256,16 @@ def repair_session(roll_id):
         fabric_name=main_info['fabric_name'],
         machine_id=main_info['machine_id'],
         order_number=main_info['order_number'],
-        repair_worker=repair_worker, # [UPDATED] Truyền None vào đây
+        repair_worker=repair_worker, 
         existing_errors=existing_errors,
-        standard_id=standard_id  # [CRITICAL] Truyền ID vào đây
+        standard_id=standard_id 
     )
     
     # 5. Lấy dữ liệu cần thiết cho Render
     current_state = state_manager.get_state(station_id)
     
-    # [REQUIRED] Lấy cây tiêu chuẩn lỗi để vẽ giao diện (nếu người sửa muốn thêm lỗi mới)
+    # 6. Chuyển hướng đến giao diện Sửa Chữa
     standards_tree = standard_service.get_all_standards_tree()
-    
-    # 6. Chuyển hướng đến giao diện Sửa Chữa (repair_index.html)
     return render_template('repair_index.html', state=current_state, standards_tree=standards_tree)
 
 
@@ -259,7 +289,6 @@ def production_report():
 def inspection_history():
     return render_template('inspection_history.html', username=current_user.username)
 
-# --- CHANGED: Removed <int:> converter to support UUID strings ---
 @view_bp.route('/inspection_history/edit/<roll_id>')
 @login_required
 def edit_inspection_ticket_page(roll_id):
@@ -288,7 +317,6 @@ def print_pallet_page(pallet_id):
     if not data: return "Lỗi dữ liệu in.", 404
     return render_template('print_pallet.html', data=data)
 
-# --- CHANGED: Removed <int:> converter to support UUID strings ---
 @view_bp.route('/print/reprint/<roll_id>')
 @login_required
 def reprint_label(roll_id):

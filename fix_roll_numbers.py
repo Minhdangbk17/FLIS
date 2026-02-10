@@ -81,7 +81,7 @@ def fix_data():
             item_identifier = _extract_item_identifier(fabric_name)
             prefix = f"{yy}{mm}{item_identifier}"
 
-            # 2. TÌM SEQUENCE (Số thứ tự)
+            # 2. TÌM SEQUENCE (Số thứ tự khởi tạo)
             if prefix not in sequence_cache:
                 # Query DB tìm số lớn nhất hiện tại của prefix này (bỏ qua các mã lỗi dài > 20)
                 check_cur = conn.cursor()
@@ -102,12 +102,32 @@ def fix_data():
                 else:
                     sequence_cache[prefix] = 0
             
-            # Tăng sequence lên 1
+            # Tăng sequence lên 1 để bắt đầu thử
             sequence_cache[prefix] += 1
             new_seq = sequence_cache[prefix]
             
-            # 3. TẠO MÃ MỚI (Prefix + 0001)
-            new_roll_code = f"{prefix}{new_seq:04d}"
+            # --- [LOGIC MỚI] VÒNG LẶP KIỂM TRA TRÙNG LẶP ---
+            while True:
+                # 3. TẠO MÃ MỚI (Prefix + 0001)
+                new_roll_code = f"{prefix}{new_seq:04d}"
+
+                # Kiểm tra xem mã này đã tồn tại trong DB chưa (bao gồm cả mã đúng và mã sai)
+                check_dup_cur = conn.cursor()
+                check_dup_cur.execute(
+                    "SELECT 1 FROM fabric_rolls WHERE roll_number = %s", 
+                    (new_roll_code,)
+                )
+                exists = check_dup_cur.fetchone()
+                
+                if not exists:
+                    # Nếu chưa tồn tại -> Mã này dùng được -> Thoát vòng lặp
+                    # Cập nhật lại cache sequence để lần sau dùng số tiếp theo
+                    sequence_cache[prefix] = new_seq
+                    break
+                else:
+                    # Nếu đã tồn tại -> Tăng số lên 1 và thử lại
+                    print(f"⚠️ Ma {new_roll_code} da ton tai -> Thu sang ...{new_seq + 1:04d}")
+                    new_seq += 1
 
             # 4. UPDATE VÀO DB
             print(f" -> [Update] {fabric_name} | {row['roll_number'][:8]}... -> {new_roll_code}")

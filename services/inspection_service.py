@@ -1,4 +1,4 @@
-# --- File: services/inspection_service.py (REFACTORED & OPTIMIZED) ---
+# --- File: services/inspection_service.py (FULL & OPTIMIZED) ---
 import psycopg2
 import psycopg2.extras
 import logging
@@ -307,14 +307,15 @@ class InspectionService:
         finally:
             if conn: db_release_connection(conn)
 
-    # --- 6. HÀM PERSIST QUEUE (WORKER) ---
+    # --- 6. HÀM PERSIST QUEUE (WORKER - FULL TRANSACTION - FIXED UPSERT) ---
     def persist_roll_data_from_queue(self, data):
         conn = None
         try:
             conn = db_get_connection()
-            conn.autocommit = False 
+            conn.autocommit = False # [IMPORTANT] Start Transaction
             cursor = conn.cursor()
 
+            # --- 1. Lấy dữ liệu cơ bản ---
             ticket_id = data.get('ticket_id')
             roll_code = data.get('roll_code')
             fabric_name = data.get('fabric_name')
@@ -324,35 +325,132 @@ class InspectionService:
             deployment_ticket_id = data.get('deployment_ticket_id')
             inspection_date = data.get('inspection_date')
             status = data.get('status', 'New')
+            
+            total_g1 = float(data.get('meters_grade1', 0) or 0)
+            total_g2 = float(data.get('meters_grade2', 0) or 0)
+            
+            workers_list = data.get('workers_log', []) 
 
+            # --- 2. Resolve Fabric ID (Giữ nguyên) ---
             fabric_id = None
             if fabric_name:
                 cursor.execute("SELECT id FROM fabrics WHERE fabric_name = %s LIMIT 1", (fabric_name,))
                 res = cursor.fetchone()
                 if res: fabric_id = res[0]
-                else: logger.warning(f"[PERSIST_QUEUE] Fabric '{fabric_name}' not found.")
 
+            # --- 3. Insert/Upsert Inspection Ticket (Giữ nguyên) ---
+            # Thêm DO UPDATE để cập nhật ngày hoặc người kiểm nếu có thay đổi
             cursor.execute("""
                 INSERT INTO inspection_tickets 
                 (ticket_id, inspection_date, order_number, machine_id, inspector_id, fabric_id, deployment_ticket_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (ticket_id) DO NOTHING
+                ON CONFLICT (ticket_id) 
+                DO UPDATE SET 
+                    inspection_date = EXCLUDED.inspection_date,
+                    inspector_id = EXCLUDED.inspector_id,
+                    machine_id = EXCLUDED.machine_id
             """, (ticket_id, inspection_date, order_number, machine_id, inspector_id, fabric_id, deployment_ticket_id))
 
+            # --- 4. Insert/Upsert Fabric Roll ---
+            # Cần UPDATE status và meters nếu trùng ID
             cursor.execute("""
                 INSERT INTO fabric_rolls 
                 (id, ticket_id, roll_number, meters_grade1, meters_grade2, status)
-                VALUES (%s, %s, %s, 0, 0, %s)
-                ON CONFLICT (id) DO NOTHING
-            """, (ticket_id, ticket_id, roll_code, status))
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) 
+                DO UPDATE SET 
+                    status = EXCLUDED.status,
+                    meters_grade1 = EXCLUDED.meters_grade1,
+                    meters_grade2 = EXCLUDED.meters_grade2
+            """, (ticket_id, ticket_id, roll_code, total_g1, total_g2, status))
 
+            # --- 5. Loop Workers & UPSERT Individual Productions (CRITICAL FIX) ---
+            for worker_entry in workers_list:
+                w_info = worker_entry.get('worker', {})
+                w_id = w_info.get('id') if isinstance(w_info, dict) else w_info
+                shift = str(worker_entry.get('shift', '')) # Ép kiểu string để tránh lỗi nếu None
+                
+                # Mapping meters
+                raw_g1 = worker_entry.get('meters_g1') if worker_entry.get('meters_g1') is not None else worker_entry.get('meters_grade1', 0)
+                val_g1 = float(raw_g1 or 0)
+
+                raw_g2 = worker_entry.get('meters_g2') if worker_entry.get('meters_g2') is not None else worker_entry.get('meters_grade2', 0)
+                val_g2 = float(raw_g2 or 0)
+
+                # [FIXED LOGIC]: Dùng ON CONFLICT (...) DO UPDATE
+                # Ràng buộc idx_unique_prod_log phải được tạo trên (roll_id, worker_id, shift)
+                cursor.execute("""
+                    INSERT INTO individual_productions 
+                    (roll_id, worker_id, shift, production_date, meters_grade1, meters_grade2) 
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (roll_id, worker_id, shift) 
+                    DO UPDATE SET
+                        meters_grade1 = EXCLUDED.meters_grade1,
+                        meters_grade2 = EXCLUDED.meters_grade2,
+                        production_date = EXCLUDED.production_date
+                    RETURNING id
+                """, (
+                    ticket_id,    # roll_id
+                    w_id,         # worker_id
+                    shift,        # shift
+                    inspection_date,
+                    val_g1,
+                    val_g2
+                ))
+                
+                # Lấy ID (Dù Insert mới hay Update cũ đều trả về ID nhờ RETURNING)
+                row = cursor.fetchone()
+                if not row: continue
+                production_id = row[0]
+
+                # --- 6. Handle Errors (Clean & Re-insert Strategy) ---
+                w_errors = worker_entry.get('errors', [])
+                
+                # Bước 1: Xóa lỗi cũ của phiên sản xuất này (để tránh trùng lặp hoặc lỗi dư thừa)
+                cursor.execute("DELETE FROM production_errors WHERE production_id = %s", (production_id,))
+                
+                # Bước 2: Insert lại danh sách lỗi mới nhất (nếu có)
+                if w_errors:
+                    error_values = []
+                    for err in w_errors:
+                        error_values.append((
+                            production_id,
+                            err.get('error_type'),
+                            float(err.get('meter_location', 0)),
+                            int(err.get('points', 1)),
+                            1,
+                            err.get('is_fixed', False)
+                        ))
+                    
+                    if error_values:
+                        sql_err = """
+                            INSERT INTO production_errors 
+                            (production_id, error_type, meter_location, points, occurrences, is_fixed)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """
+                        cursor.executemany(sql_err, error_values)
+
+            # --- 7. Final Commit ---
             conn.commit()
+            
+            # Auto-update total meters (Giữ nguyên logic tính tổng lại cho chắc chắn)
+            try:
+                cursor.execute("""
+                    UPDATE fabric_rolls 
+                    SET meters_grade1 = (SELECT COALESCE(SUM(meters_grade1),0) FROM individual_productions WHERE roll_id = %s),
+                        meters_grade2 = (SELECT COALESCE(SUM(meters_grade2),0) FROM individual_productions WHERE roll_id = %s)
+                    WHERE id = %s
+                """, (ticket_id, ticket_id, ticket_id))
+                conn.commit()
+            except Exception:
+                pass # Bỏ qua lỗi phụ này nếu transaction chính đã xong
+
             return {"status": "success", "ticket_id": ticket_id}
 
         except Exception as e:
             if conn: conn.rollback()
             logger.error(f"[PERSIST_QUEUE_ERROR] Ticket: {data.get('ticket_id')} | Error: {e}")
-            raise e # Raise để Worker xử lý retry
+            raise e
         finally:
             if conn: db_release_connection(conn)
 

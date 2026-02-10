@@ -4,6 +4,7 @@ import os
 import uuid
 import re   
 from datetime import datetime
+import copy
 from flask import jsonify, request, current_app, url_for
 from flask_login import login_required, current_user
 
@@ -13,12 +14,11 @@ from services.inspection_service import inspection_service
 from services.machine_service import machine_service
 from services.user_service import user_service
 from services.standard_service import standard_service
-#from services.db_connection import db_get_connection
 from services.label import print_ticket_label
 from services.redis_manager import redis_manager # Redis Manager
 from . import api_ins_bp
 
-# --- Helper ---
+# --- Helpers ---
 def get_current_meter():
     if hasattr(current_app, 'poller_instance') and current_app.poller_instance:
         return current_app.poller_instance.get_last_state().get('meters', 0)
@@ -32,38 +32,122 @@ def _extract_item_identifier(fabric_name):
     clean_identifier = re.sub(r'[/\-\s]', '', longest_part)
     return clean_identifier if clean_identifier else "00"
 
-# --- Printing Logic (Refined for Redis Arch) ---
+def sync_to_redis(state_data):
+    """
+    [UPDATED] Đóng gói thông tin phiếu và đẩy vào Redis Queue.
+    - Tự động gộp 'current_worker_details' (nếu chưa end shift) vào danh sách log.
+    - Chuẩn hóa danh sách lỗi (errors) cho từng công nhân.
+    - Tính tổng mét chính xác từ danh sách gộp.
+    """
+    try:
+        if not state_data:
+            return
+
+        # 1. Chuẩn bị danh sách Workers Log đầy đủ
+        # Lấy danh sách đã hoàn thành
+        final_logs = []
+        raw_completed_logs = state_data.get('completed_workers_log', [])
+        
+        # Deep copy để tránh ảnh hưởng đến state gốc trong RAM
+        final_logs = copy.deepcopy(raw_completed_logs)
+
+        # [CRITICAL] Xử lý công nhân "dang dở" (Pending Worker)
+        # Kiểm tra xem có công nhân đang hoạt động (chưa chốt ca) không?
+        # Nếu có, ta phải coi như họ đã hoàn thành để tính toán số liệu cho cây vải này.
+        current_worker = state_data.get('current_worker_details')
+        if current_worker:
+            # Tạo một bản ghi log tạm thời từ current_worker
+            temp_log = copy.deepcopy(current_worker)
+            
+            # Tính toán số mét thực tế nếu chưa có (Auto End Shift Logic)
+            # Lấy mét hiện tại từ phần cứng (nếu hàm được gọi trong context có thể truy cập hardware)
+            # Tuy nhiên, sync_to_redis thường nhận state snapshot. 
+            # Nếu state_data đã được cập nhật mét mới nhất trước khi gọi hàm này thì tốt.
+            # Ở đây ta đảm bảo cấu trúc dữ liệu không bị thiếu.
+            
+            if 'meters_grade1' not in temp_log: temp_log['meters_grade1'] = 0
+            if 'meters_grade2' not in temp_log: temp_log['meters_grade2'] = 0
+            
+            final_logs.append(temp_log)
+
+        # 2. Chuẩn hóa dữ liệu Log (Mapping key 'errors')
+        processed_logs = []
+        for log in final_logs:
+            # Service bên kia cần key là 'errors'
+            # State Manager có thể lưu là 'current_errors' hoặc 'errors'
+            errs = log.get('errors', [])
+            if not errs and 'current_errors' in log:
+                errs = log['current_errors']
+            
+            # Đảm bảo mỗi item lỗi có đủ thông tin
+            clean_errors = []
+            for e in errs:
+                clean_errors.append({
+                    "error_type": e.get('error_type'),
+                    "meter_location": e.get('meter_location', 0),
+                    "points": e.get('points', 1),
+                    "is_fixed": e.get('is_fixed', False)
+                })
+
+            log['errors'] = clean_errors
+            processed_logs.append(log)
+
+        # 3. Tính toán tổng hợp (Re-calculate Total)
+        # Tính lại tổng dựa trên danh sách đã bao gồm công nhân pending
+        calc_g1 = sum(float(w.get('meters_grade1', 0) or 0) for w in processed_logs)
+        calc_g2 = sum(float(w.get('meters_grade2', 0) or 0) for w in processed_logs)
+
+        # 4. Tạo Payload
+        payload = {
+            "ticket_id": state_data.get('ticket_id'),
+            "roll_code": state_data.get('roll_code'),
+            "fabric_name": state_data.get('fabric_name'),
+            "machine_id": state_data.get('machine_id'),
+            "inspector_id": state_data.get('inspector_id'),
+            "order_number": state_data.get('order_number'),
+            "deployment_ticket_id": state_data.get('deployment_ticket_id'),
+            "inspection_date": state_data.get('inspection_date') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "status": state_data.get('status'),
+            "created_at": time.time(),
+            
+            # Gửi giá trị đã tính toán
+            "meters_grade1": calc_g1, 
+            "meters_grade2": calc_g2,
+            
+            # Gửi danh sách worker đầy đủ (kèm lỗi nested)
+            "workers_log": processed_logs,
+            "action_type": "FINISH_ROLL" 
+        }
+
+        redis_manager.push_inspection_data(payload)
+        current_app.logger.info(f">>> Redis Sync: Pushed Roll {state_data.get('roll_code')} | Workers: {len(processed_logs)} | G1: {calc_g1}")
+        
+    except Exception as e:
+        current_app.logger.error(f"REDIS SYNC ERROR: {str(e)}")
+
+# --- Printing Logic ---
 def perform_printing(ticket_id):
     try:
-        # 1. Lấy thông tin từ Local DB (Đây là nguồn tin cậy nhất cho UI/In ấn tại trạm)
-        # Vì khi tách cây, ta đã lưu roll_code (do Redis cấp) vào Local DB rồi.
         info = local_db_manager.get_ticket_info_by_id(ticket_id)
         if not info: 
             print(f"Printing Error: Ticket info not found for ID {ticket_id}")
             return False
         
-        # 2. Lấy Roll Code
-        # Ưu tiên lấy từ Local DB vì Server (Postgres) có thể chưa sync kịp do Worker chạy nền.
         roll_number = info.get('roll_code')
-        
         if not roll_number or roll_number == "N/A":
-             # Fallback cực đoan: Nếu Local mất data, mới thử hỏi Server
             try:
                 roll_details = inspection_service.get_roll_details_by_roll_number(ticket_id)
                 if roll_details: roll_number = roll_details.get('roll_number')
             except: pass
 
-        # 3. Lấy tên KCS
         inspector_id = info.get('inspector_id')
         inspector_name = "N/A"
         if inspector_id:
             try:
-                # Thử lấy từ User Service (Có cache fallback)
                 user_info = user_service.get_user_by_id(inspector_id)
-                if user_info: inspector_name = user_info[1] # username
+                if user_info: inspector_name = user_info[1]
             except: pass
         
-        # 4. Số liệu
         logs = local_db_manager.get_worker_log_by_ticket_id(ticket_id)
         total_m = sum((l.get('total_meters', 0) or 0) for l in logs)
         total_g1 = sum((l.get('meters_g1', 0) or 0) for l in logs)
@@ -82,7 +166,6 @@ def perform_printing(ticket_id):
             "inspector_name": inspector_name
         }
 
-        # Template
         template_name = 'default'
         try:
             default_std = standard_service.get_default_standard()
@@ -90,15 +173,11 @@ def perform_printing(ticket_id):
         except: pass
 
         return print_ticket_label(ticket_data, template_name=template_name)
-
     except Exception as e: 
         print(f"Printing Critical Error: {e}")
         return False
 
 # --- API ROUTES ---
-
-# ... (Giữ nguyên các API Standard, Error, Repair, Worker... không thay đổi logic) ...
-# ... (Chỉ paste lại phần API Tách cây quan trọng nhất bên dưới) ...
 
 @api_ins_bp.route('/api/standard/details/<int:standard_id>')
 @login_required
@@ -188,22 +267,43 @@ def action_downgrade():
 def action_repair():
     station_id = current_app.config['STATION_ID']
     s = state_manager.get_state(station_id)
-    
-    if not s or not s['active']: 
-        return jsonify({"error": "No active session"}), 400
+    if not s or not s['active']: return jsonify({"error": "No active session"}), 400
 
     try:
+        # [UPDATED] Trước khi kết thúc, cập nhật mét cho công nhân hiện tại (nếu có)
+        # để đảm bảo dữ liệu trong sync_to_redis là mới nhất
+        if s.get('current_worker_details'):
+             # Logic giả lập end_shift nhanh để cập nhật state trong RAM trước khi gửi
+             # Lưu ý: Cần lấy số mét thực tế từ phần cứng tại thời điểm này
+             current_meter = get_current_meter()
+             
+             # Gọi vào state_manager để update meters cho worker hiện tại
+             # Giả sử trong state_manager có hàm update_current_worker_meters
+             # Nếu không, ta cập nhật trực tiếp vào object current_worker_details
+             start_meter = s['current_worker_details'].get('start_meter', 0)
+             produced = current_meter - start_meter
+             if produced < 0: produced = 0
+             
+             # Tạm thời chia đều hoặc gán vào grade 1 (hoặc lấy từ request nếu FE gửi lên)
+             # Ở đây ta lấy snapshot meter hiện tại để đảm bảo không bị 0
+             s['current_worker_details']['meters_grade1'] = produced
+             s['current_worker_details']['end_meter'] = current_meter
+
         # 1. Cập nhật thông tin trạng thái
         s['inspection_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         s['status'] = 'TO_REPAIR_WAREHOUSE'
         notes = request.json.get('notes', '') if request.json else ''
         s['notes'] = (s.get('notes', '') + " " + notes + " [CẦN SỬA CHỮA]").strip()
 
-        # 2. Lưu DB - Bọc trong try riêng để bắt lỗi SQL
+        # 2. Lưu DB Local
         try:
             success_save = local_db_manager.save_completed_session_v2(s)
             if not success_save:
-                return jsonify({"error": "Local DB từ chối lưu dữ liệu (Trả về False)."}), 500
+                return jsonify({"error": "Local DB từ chối lưu dữ liệu."}), 500
+            
+            # [FIXED] Đẩy đồng bộ Redis (Hàm này sẽ tự lấy current_worker_details đã update ở trên)
+            sync_to_redis(s)
+
         except Exception as db_err:
             current_app.logger.error(f"DATABASE CRASH in action_repair: {db_err}")
             return jsonify({"error": f"Lỗi Database: {str(db_err)}"}), 500
@@ -212,16 +312,14 @@ def action_repair():
         tid = s['ticket_id']
         state_manager.end_session(station_id)
         
-        # 4. Modbus & Printing (Bọc để không làm sập cả quy trình nếu lỗi in)
         try:
             if hasattr(current_app, 'poller_instance'):
                 current_app.poller_instance.write_reset_meter()
             perform_printing(tid)
         except Exception as ext_err:
-            current_app.logger.warning(f"Lỗi ngoại vi (In/Meter) nhưng dữ liệu đã lưu: {ext_err}")
+            current_app.logger.warning(f"Lỗi ngoại vi (In/Meter): {ext_err}")
 
         return jsonify({"status": "success", "redirect_url": url_for('main.select_machine'), "ticket_id": tid})
-
     except Exception as global_err:
         current_app.logger.error(f"CRITICAL ERROR in action_repair: {global_err}")
         return jsonify({"error": f"Lỗi hệ thống: {str(global_err)}"}), 500
@@ -245,7 +343,6 @@ def start_worker_shift():
         worker_obj = {"id": worker[0], "name": worker[1]}
         state_manager.assign_new_worker(st_id, worker_obj, data.get('shift'), get_current_meter())
         
-        # Retroactive fix for previous roll gap
         curr = state_manager.get_state(st_id)
         if curr and curr.get('ticket_id'):
             inspection_service.update_pending_worker_from_previous_roll(curr['ticket_id'], worker_obj)
@@ -309,7 +406,27 @@ def post_inspection_action():
     station_id = current_app.config['STATION_ID']
     data = request.json
     ticket_id = data.get('ticket_id')
+    current_state = state_manager.get_state(station_id)
+
     if local_db_manager.update_ticket_post_action(ticket_id, data.get('notes', ''), data.get('action')):
+        # [FIX] Đẩy đồng bộ Redis trước khi kết thúc session RAM
+        if current_state and current_state.get('ticket_id') == ticket_id:
+            current_state['status'] = 'TO_INSPECTED_WAREHOUSE'
+            current_state['inspection_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # [UPDATED] Kiểm tra và cập nhật metrics cho worker cuối cùng nếu đang pending
+            if current_state.get('current_worker_details'):
+                 current_meter = get_current_meter()
+                 start_meter = current_state['current_worker_details'].get('start_meter', 0)
+                 produced = current_meter - start_meter
+                 if produced < 0: produced = 0
+                 
+                 current_state['current_worker_details']['meters_grade1'] = produced
+                 current_state['current_worker_details']['end_meter'] = current_meter
+
+            # Gọi hàm sync mới (sẽ tự động gộp current_worker_details vào final_log và tính lại tổng)
+            sync_to_redis(current_state)
+
         state_manager.end_session(station_id)
         try: current_app.poller_instance.write_reset_meter()
         except: pass
@@ -317,10 +434,13 @@ def post_inspection_action():
         return jsonify({"status": "success", "redirect_url": url_for('main.select_machine')})
     return jsonify({"error": "Lỗi cập nhật."}), 500
 
-# [QUAN TRỌNG] API TÁCH CÂY SỬ DỤNG REDIS
 @api_ins_bp.route('/api/split_roll', methods=['POST'])
 @login_required
 def api_split_roll():
+    """
+    Tách cây: Kết thúc cây cũ, Sinh mã cây mới.
+    REFACTORED: Sử dụng Redis Atomic Increment để sinh mã.
+    """
     station_id = current_app.config['STATION_ID']
     current_state = state_manager.get_state(station_id)
     
@@ -331,35 +451,68 @@ def api_split_roll():
         return jsonify({"error": "Vui lòng kết thúc ca làm việc của công nhân trước khi tách cây."}), 400
 
     try:
+        # --- [NGHIỆP VỤ HỒI QUY] ---
+        # Kiểm tra nếu chưa có công nhân nào trong log (Log rỗng)
+        logs = current_state.get('completed_workers_log', [])
+        if not logs:
+            pending_log = {
+                "worker": {"id": "PENDING_NEXT_ROLL", "name": "System/Pending"},
+                "shift": "AUTO",
+                "meters_grade1": 0,
+                "meters_grade2": 0,
+                "start_meter": 0,
+                "end_meter": get_current_meter(),
+                "errors": [] # Initialize errors list
+            }
+            current_state.setdefault('completed_workers_log', []).append(pending_log)
+        # ---------------------------
+
         # 1. Chốt cây cũ
         current_state['status'] = 'TO_INSPECTED_WAREHOUSE' 
         current_state['inspection_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Lưu Local DB
         local_db_manager.save_completed_session_v2(current_state)
         old_ticket_id = current_state['ticket_id']
         
-        # 2. In tem & Reset đồng hồ
+        # 2. In tem & Reset
         perform_printing(old_ticket_id)
         if hasattr(current_app, 'poller_instance') and current_app.poller_instance:
             current_app.poller_instance.write_reset_meter()
 
-        # 3. SINH CÂY MỚI QUA REDIS (CRITICAL STEP)
+        # 3. Sinh cây mới qua Redis (Refactored)
         new_ticket_id = str(uuid.uuid4())
         fabric_name = current_state.get('fabric_name', '')
-        
-        # Prefix = YYMM + ItemIdentifier
         now = datetime.now()
         prefix = f"{now.strftime('%y%m')}{_extract_item_identifier(fabric_name)}"
 
-        # 3a. Lấy Sequence từ Redis (FAIL-FAST)
-        # Nếu Redis lỗi -> Dừng ngay lập tức, không dùng Local DB hay đoán mò.
+        sequence = None
         try:
+            # [PRIORITY 1] Redis Atomic
             sequence = redis_manager.get_next_roll_sequence(prefix)
-            final_roll_code = f"{prefix}{sequence:04d}"
         except Exception as e:
-            return jsonify({"error": f"LỖI NGHIÊM TRỌNG: Redis mất kết nối ({str(e)}). Không thể cấp mã cây."}), 500
+            current_app.logger.error(f"REDIS SPLIT ERROR: {e}")
+            # [PRIORITY 2] Server DB Fallback
+            try:
+                sequence = inspection_service.get_next_sequence_from_server(prefix)
+            except: pass
+        
+        # [PRIORITY 3] Local Fallback
+        if sequence is None:
+             sequence = local_db_manager.get_next_sequence_by_prefix(prefix) or 1
 
-        # 3b. Đẩy vào Redis Queue
-        payload = {
+        # Safe Format
+        try:
+            seq_int = int(sequence)
+            final_roll_code = f"{prefix}{seq_int:04d}"
+        except:
+             final_roll_code = f"{prefix}{str(sequence).zfill(4)}"
+        
+        # [CRITICAL] Sync Redis sau khi đã có roll_code của cây tiếp theo
+        sync_to_redis(current_state)
+
+        # Chuẩn bị payload cho cây MỚI để lưu vào Queue Redis
+        payload_new = {
             "ticket_id": new_ticket_id,
             "roll_code": final_roll_code,
             "fabric_name": fabric_name,
@@ -369,16 +522,17 @@ def api_split_roll():
             "deployment_ticket_id": current_state.get('deployment_ticket_id'),
             "inspection_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             "created_at": time.time(),
-            "status": "NEW"
+            "status": "NEW",
+            "action_type": "CREATE_ROLL"
         }
         
         try:
-            redis_manager.push_inspection_data(payload)
-            print(f"Split Roll: {final_roll_code} -> Pushed to Redis.")
+            redis_manager.push_inspection_data(payload_new)
         except Exception as e:
-             return jsonify({"error": f"LỖI: Không thể lưu vào Queue ({str(e)})."}), 500
+            # Nếu Redis chết đoạn này thì chỉ log lỗi, không chặn luồng chính vì Local DB vẫn chạy
+             current_app.logger.error(f"REDIS QUEUE ERROR (SPLIT): {str(e)}")
 
-        # 4. Tạo State mới trên RAM
+        # 4. Tạo State mới
         new_state = state_manager.clone_session_for_split(
             station_id, 
             new_ticket_id,
@@ -386,12 +540,10 @@ def api_split_roll():
         )
         
         return jsonify({"status": "success", "old_ticket_id": old_ticket_id, "new_state": new_state})
-
     except Exception as e: 
-        print(f"Split Roll Error: {e}")
+        current_app.logger.error(f"Split Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ... (Các API Fabric, Weaving Status, Worker Info... giữ nguyên) ...
 @api_ins_bp.route('/api/get_fabric_options')
 @login_required
 def get_fabric_options():
@@ -401,6 +553,10 @@ def get_fabric_options():
 @api_ins_bp.route('/api/update_inspection_fabric', methods=['POST'])
 @login_required
 def update_inspection_fabric():
+    """
+    Đổi loại vải: Cập nhật thông tin và sinh mã mới cho loại vải mới.
+    REFACTORED: Sử dụng Redis Atomic Increment.
+    """
     st_id = current_app.config['STATION_ID']
     s = state_manager.get_state(st_id)
     new_fab = request.json.get('new_fabric_name')
@@ -411,14 +567,28 @@ def update_inspection_fabric():
             machine_service.update_fabric_id_for_deployment(s['deployment_ticket_id'], new_fab)
         state_manager.update_fabric_name(st_id, new_fab)
         
-        # Redis Sequence Update
         now = datetime.now()
         prefix = f"{now.strftime('%y%m')}{_extract_item_identifier(new_fab)}"
+        
+        sequence = None
         try:
-            seq = redis_manager.get_next_roll_sequence(prefix)
-            s['roll_code'] = f"{prefix}{seq:04d}"
+            # [PRIORITY 1] Redis Atomic
+            sequence = redis_manager.get_next_roll_sequence(prefix)
         except Exception as e:
-            return jsonify({"error": f"Redis Error: {e}"}), 500
+            current_app.logger.error(f"REDIS UPDATE FABRIC ERROR: {e}")
+            # [PRIORITY 2] Fallback DB
+            try:
+                sequence = inspection_service.get_next_sequence_from_server(prefix)
+            except: pass
+        
+        if sequence is None:
+             sequence = local_db_manager.get_next_sequence_by_prefix(prefix) or 1
+
+        try:
+            seq_int = int(sequence)
+            s['roll_code'] = f"{prefix}{seq_int:04d}"
+        except:
+             s['roll_code'] = f"{prefix}{str(sequence).zfill(4)}"
 
         return jsonify(state_manager.get_state(st_id))
     except Exception as e: return jsonify({"error": str(e)}), 500
@@ -453,7 +623,29 @@ def reprint_raw_ticket(ticket_id):
 @api_ins_bp.route('/api/repair/search_worker')
 @login_required
 def search_repair_worker():
-    return jsonify(user_service.search_workers_by_name(request.args.get('name')))
+    name_query = request.args.get('name', '')
+    
+    # [FIX 1] Gọi đúng hàm tìm thợ sửa (NBD08) trong user_service
+    # Hàm này bạn đã viết ở bước trước (search_repair_workers)
+    raw_data = user_service.search_repair_workers(name_query)
+    
+    # [FIX 2] Map dữ liệu thủ công để đảm bảo Frontend không bị undefined
+    # Frontend repair.js cần key: "id" và "name"
+    results = []
+    for row in raw_data:
+        # Lấy id (chấp nhận cả key 'id' hoặc 'personnel_id' từ DB)
+        w_id = row.get('id') or row.get('personnel_id')
+        
+        # Lấy name (chấp nhận cả key 'name' hoặc 'full_name' từ DB)
+        w_name = row.get('name') or row.get('full_name')
+        
+        results.append({
+            "id": w_id,
+            "name": w_name
+        })
+        
+    return jsonify(results)
+
 
 @api_ins_bp.route('/api/repair/get_list')
 @login_required
@@ -464,7 +656,6 @@ def get_repair_list():
 @api_ins_bp.route('/api/repair/finish', methods=['POST'])
 @login_required
 def finish_repair_session():
-    # ... (Giữ nguyên logic finish repair) ...
     st_id = current_app.config['STATION_ID']
     s = state_manager.get_state(st_id)
     if not s or not s.get('is_repair_mode'): return jsonify({"error": "No repair session"}), 400
@@ -473,12 +664,10 @@ def finish_repair_session():
     if not wid: return jsonify({"error": "Missing worker"}), 400
     
     try:
-        # Tính toán KPI
         init_err = s.get('initial_error_count', 0)
         curr_err = s.get('current_worker_details', {}).get('current_errors', [])
         rem_err = sum(1 for e in curr_err if not e.get('is_fixed'))
         
-        # Save DB
         r_info = inspection_service.get_roll_details_by_roll_number(s['ticket_id'])
         if not r_info: return jsonify({"error": "Roll not found DB"}), 400
         

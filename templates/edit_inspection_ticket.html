@@ -5,136 +5,256 @@
 {{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/inspection.css') }}">
 <style>
-    /* Custom styles for Edit Page */
-    .worker-card {
-        border-left: 5px solid #0d6efd;
-        background-color: #f8f9fa;
-        transition: all 0.2s;
+    /* --- INDUSTRIAL TOUCH UI --- */
+    :root {
+        --touch-btn-height: 60px;
     }
-    .worker-card:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+
+    body {
+        background-color: #f0f2f5;
+        overflow-x: hidden; /* Ngăn scroll ngang */
     }
-    .error-row {
-        background-color: #fff;
-        border-bottom: 1px dashed #dee2e6;
+
+    /* Tiêu đề phiếu */
+    .ticket-header {
+        background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 0 0 10px 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .error-row:last-child {
-        border-bottom: none;
+
+    /* Các input lớn */
+    .form-label {
+        font-weight: 600;
+        color: #495057;
+        margin-bottom: 2px;
     }
-    .sticky-footer {
-        position: sticky;
-        bottom: 0;
+    .form-control-lg, .form-select-lg {
+        height: 50px;
+        font-size: 1.1rem;
+        border: 2px solid #dee2e6;
+    }
+    .form-control-lg:focus {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
+    }
+
+    /* Worker Section */
+    .worker-block {
         background: white;
-        padding: 15px;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-        z-index: 100;
-        border-top: 1px solid #dee2e6;
+        border-radius: 8px;
+        border-left: 8px solid #0d6efd; /* Màu mặc định */
+        margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    .total-display {
+    .worker-header {
+        padding: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #eee;
+        border-radius: 0 8px 0 0;
+    }
+    
+    /* Error Rows */
+    .error-list {
+        padding: 0;
+    }
+    .error-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 15px;
+        border-bottom: 1px solid #eee;
+        font-size: 1.1rem;
+    }
+    .error-item:last-child { border-bottom: none; }
+    
+    .btn-delete-error {
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+    }
+
+    /* Buttons to */
+    .btn-industrial {
+        height: var(--touch-btn-height);
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+    }
+
+    /* Error Type Grid in Modal */
+    .error-type-btn {
+        height: 80px; /* Nút rất to */
         font-size: 1.2rem;
         font-weight: bold;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        border: 2px solid #6c757d;
+        color: #495057;
+        transition: all 0.2s;
     }
+    .error-type-btn:active, .error-type-btn.active {
+        background-color: #0d6efd;
+        color: white;
+        border-color: #0d6efd;
+        transform: scale(0.98);
+    }
+    .error-type-btn i { font-size: 1.5rem; margin-bottom: 5px; }
+
+    /* Sticky Footer tối ưu */
+    .sticky-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #fff;
+        padding: 10px 20px;
+        box-shadow: 0 -4px 15px rgba(0,0,0,0.1);
+        z-index: 1040;
+        border-top: 2px solid #0d6efd;
+        height: 85px; /* Chiều cao cố định */
+    }
+    
+    /* Spacer để nội dung không bị footer che */
+    .spacer-bottom { height: 100px; }
 </style>
 {% endblock head %}
 
 {% block content %}
-<div class="container-fluid mt-3 mb-5 pb-5" 
-     id="edit-ticket-container" 
-     data-roll-id="{{ roll_id }}">
+<div class="container-fluid px-0" id="edit-ticket-container" data-roll-id="{{ roll_id }}">
 
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0"><i class="bi bi-pencil-square"></i> CHỈNH SỬA PHIẾU KIỂM</h5>
-            <span class="badge bg-light text-primary" id="header_ticket_id">Loading...</span>
+    <div class="ticket-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0 fw-bold"><i class="bi bi-pencil-square me-2"></i>SỬA PHIẾU #<span id="header_ticket_id">...</span></h4>
+        <div>
+            <span class="badge bg-warning text-dark fs-6 me-2" id="header_status">Đang sửa</span>
         </div>
-        <div class="card-body">
-            <form id="ticket-main-form">
-                <div class="row g-3">
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Mã Máy</label>
-                        <input type="text" class="form-control fw-bold" id="info_machine_id" data-vkb>
+    </div>
+
+    <div class="container-fluid px-3">
+        <div class="row g-4">
+            <div class="col-lg-4 col-md-5">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-light fw-bold py-3 text-uppercase text-secondary">
+                        <i class="bi bi-info-circle me-2"></i>Thông tin chung
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label small text-muted">Tên Vải <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control fw-bold border-info" id="info_fabric_name" data-vkb>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Lệnh SX (LSX)</label>
-                        <input type="text" class="form-control fw-bold" id="info_order_number" data-vkb>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label small text-muted">Ngày Kiểm</label>
-                        <input type="datetime-local" class="form-control" id="info_inspection_date">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Nhân viên KCS (Master)</label>
-                        <select class="form-select" id="info_inspector_id">
-                            </select>
+                    <div class="card-body">
+                        <form id="ticket-main-form">
+                            <div class="mb-3">
+                                <label class="form-label">Mã Máy</label>
+                                <input type="text" class="form-control form-control-lg fw-bold bg-light" id="info_machine_id" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Tên Vải <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-lg fw-bold border-primary" id="info_fabric_name" data-vkb>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Lệnh SX</label>
+                                <input type="text" class="form-control form-control-lg fw-bold" id="info_order_number" data-vkb>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Nhân viên KCS</label>
+                                <select class="form-select form-select-lg" id="info_inspector_id">
+                                    </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Ngày Giờ</label>
+                                <input type="datetime-local" class="form-control form-control-lg" id="info_inspection_date">
+                            </div>
+                        </form>
                     </div>
                 </div>
-            </form>
+            </div>
+
+            <div class="col-lg-8 col-md-7">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold text-primary mb-0">DANH SÁCH CÔNG NHÂN & LỖI</h5>
+                    <button class="btn btn-primary btn-industrial px-4 shadow-sm" id="btn-add-worker-modal">
+                        <i class="bi bi-person-plus-fill me-2"></i> THÊM CÔNG NHÂN
+                    </button>
+                </div>
+
+                <div id="workers-container" class="pb-3">
+                    </div>
+                
+                <div class="spacer-bottom"></div>
+            </div>
         </div>
     </div>
-
-    <div class="d-flex justify-content-between align-items-center mb-2">
-        <h5 class="text-primary fw-bold"><i class="bi bi-people-fill"></i> DANH SÁCH CÔNG NHÂN & LỖI</h5>
-        <button class="btn btn-outline-primary btn-sm" id="btn-add-worker-modal">
-            <i class="bi bi-person-plus-fill"></i> Thêm Công Nhân
-        </button>
-    </div>
-
-    <div id="workers-container">
-        </div>
 
 </div>
 
-<div class="sticky-footer d-flex justify-content-between align-items-center">
-    <div class="d-flex gap-4">
-        <div class="text-center">
-            <small class="text-muted d-block">Tổng G1</small>
-            <span class="text-success fw-bold fs-5" id="footer-sum-g1">0.00</span>
+<div class="sticky-footer">
+    <div class="row align-items-center h-100 g-2">
+        <div class="col-md-5 d-flex justify-content-around">
+            <div class="text-center">
+                <span class="d-block text-muted small fw-bold">TỔNG MÉT</span>
+                <span class="text-primary fw-bold fs-3" id="footer-total-meters">0.00 M</span>
+            </div>
+            <div class="text-center border-start ps-3">
+                <span class="d-block text-muted small">Điểm G1</span>
+                <span class="text-success fw-bold fs-4" id="footer-sum-g1">0.0</span>
+            </div>
+            <div class="text-center">
+                <span class="d-block text-muted small">Điểm G2</span>
+                <span class="text-warning fw-bold fs-4" id="footer-sum-g2">0.0</span>
+            </div>
         </div>
-        <div class="text-center">
-            <small class="text-muted d-block">Tổng G2</small>
-            <span class="text-warning fw-bold fs-5" id="footer-sum-g2">0.00</span>
-        </div>
-        <div class="text-center border-start ps-3">
-            <small class="text-muted d-block">TỔNG MÉT</small>
-            <span class="text-primary fw-bold fs-4" id="footer-total-meters">0.00 M</span>
-        </div>
-    </div>
 
-    <div class="d-flex gap-2">
-        <a href="{{ url_for('main.inspection_history') }}" class="btn btn-secondary">
-            <i class="bi bi-arrow-left"></i> Quay lại
-        </a>
-        <button class="btn btn-info text-white" id="btn-reprint">
-            <i class="bi bi-printer"></i> In Lại Tem
-        </button>
-        <button class="btn btn-success fw-bold px-4" id="btn-save-all">
-            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-            <i class="bi bi-save"></i> LƯU THAY ĐỔI
-        </button>
+        <div class="col-md-7 d-flex justify-content-end gap-2">
+            <button class="btn btn-outline-secondary btn-industrial px-3" onclick="history.back()">
+                <i class="bi bi-arrow-return-left"></i>
+            </button>
+            <button class="btn btn-info btn-industrial text-white px-3" id="btn-reprint">
+                <i class="bi bi-printer me-2"></i> IN LẠI
+            </button>
+            <button class="btn btn-success btn-industrial px-5 shadow" id="btn-save-all">
+                <span class="spinner-border spinner-border-sm d-none me-2" role="status"></span>
+                <i class="bi bi-save me-2"></i> LƯU PHIẾU
+            </button>
+        </div>
     </div>
 </div>
 
 <div class="modal fade" id="addWorkerModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title">Thêm Công Nhân Vào Phiếu</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold">THÊM CÔNG NHÂN ĐỨNG MÁY</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
             <div class="modal-body">
-                <div class="mb-3">
-                    <label>Tìm kiếm (Tên/Mã):</label>
-                    <input type="text" class="form-control" id="worker-search-term" data-vkb>
-                    <div id="worker-search-results" class="list-group mt-2"></div>
+                <div class="mb-4">
+                    <label class="form-label">Tìm kiếm (Tên/Mã):</label>
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control fw-bold" id="worker-search-term" placeholder="Nhập tên..." data-vkb>
+                    </div>
+                    <div id="worker-search-results" class="list-group mt-2 shadow-sm" style="max-height: 200px; overflow-y: auto;"></div>
                 </div>
                 <div class="mb-3">
-                    <label>Ca làm việc:</label>
-                    <select class="form-select" id="new-worker-shift">
-                        <option value="1">Ca 1 (Sáng)</option>
-                        <option value="2">Ca 2 (Chiều)</option>
-                        <option value="3">Ca 3 (Đêm)</option>
-                    </select>
+                    <label class="form-label">Ca làm việc:</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="shift-options" id="shift1" value="1" checked>
+                        <label class="btn btn-outline-primary btn-lg py-3" for="shift1">SÁNG</label>
+
+                        <input type="radio" class="btn-check" name="shift-options" id="shift2" value="2">
+                        <label class="btn btn-outline-primary btn-lg py-3" for="shift2">CHIỀU</label>
+
+                        <input type="radio" class="btn-check" name="shift-options" id="shift3" value="3">
+                        <label class="btn btn-outline-primary btn-lg py-3" for="shift3">ĐÊM</label>
+                    </div>
+                    <select class="form-select d-none" id="new-worker-shift"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
                 </div>
             </div>
         </div>
@@ -142,45 +262,97 @@
 </div>
 
 <div class="modal fade" id="addErrorModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header bg-warning text-dark"><h5 class="modal-title">Thêm Lỗi</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title fw-bold text-dark"><i class="bi bi-exclamation-triangle-fill me-2"></i>THÊM LỖI VẢI</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
             <div class="modal-body">
                 <input type="hidden" id="target-worker-index">
                 
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label>Vị trí mét:</label>
-                        <input type="number" class="form-control fw-bold" id="new-error-meter" step="0.1" data-vkb>
+                <div class="row mb-4">
+                    <div class="col-6">
+                        <label class="form-label">Vị trí (Mét)</label>
+                        <div class="input-group input-group-lg">
+                            <input type="number" class="form-control fw-bold text-center fs-3 text-primary" id="new-error-meter" step="0.1" inputmode="decimal" data-vkb>
+                            <span class="input-group-text">m</span>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <label>Điểm lỗi:</label>
-                        <select class="form-select" id="new-error-points">
-                            <option value="1">1 Điểm</option>
-                            <option value="2">2 Điểm</option>
-                            <option value="3">3 Điểm</option>
-                            <option value="4">4 Điểm</option>
-                        </select>
+                    <div class="col-6">
+                        <label class="form-label">Điểm trừ</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="error-point" id="pt1" value="1" checked onchange="document.getElementById('new-error-points').value=1">
+                            <label class="btn btn-outline-danger btn-lg py-3 fw-bold" for="pt1">1</label>
+                            
+                            <input type="radio" class="btn-check" name="error-point" id="pt2" value="2" onchange="document.getElementById('new-error-points').value=2">
+                            <label class="btn btn-outline-danger btn-lg py-3 fw-bold" for="pt2">2</label>
+                            
+                            <input type="radio" class="btn-check" name="error-point" id="pt3" value="3" onchange="document.getElementById('new-error-points').value=3">
+                            <label class="btn btn-outline-danger btn-lg py-3 fw-bold" for="pt3">3</label>
+                            
+                            <input type="radio" class="btn-check" name="error-point" id="pt4" value="4" onchange="document.getElementById('new-error-points').value=4">
+                            <label class="btn btn-outline-danger btn-lg py-3 fw-bold" for="pt4">4</label>
+                        </div>
+                        <select class="form-select d-none" id="new-error-points"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
                     </div>
                 </div>
 
-                <label>Chọn loại lỗi:</label>
-                <div class="row g-2 mt-1" id="error-type-grid">
-                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Thủng lỗ">Thủng lỗ</button></div>
-                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Mối nối">Mối nối</button></div>
-                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Tạp bông">Tạp bông</button></div>
-                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Vết bẩn">Vết bẩn</button></div>
-                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Sợi thô">Sợi thô</button></div>
-                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Lỗi biên">Lỗi biên</button></div>
-                    <div class="col-4"><button class="btn btn-outline-dark w-100 error-select-btn" data-type="Khác">Khác</button></div>
+                <label class="form-label mb-2">Chọn Loại Lỗi:</label>
+                <div class="row g-2" id="error-type-grid">
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Thủng lỗ">
+                            <i class="bi bi-circle"></i> Thủng lỗ
+                        </button>
+                    </div>
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Mối nối">
+                            <i class="bi bi-union"></i> Mối nối
+                        </button>
+                    </div>
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Tạp bông">
+                            <i class="bi bi-cloud-haze"></i> Tạp bông
+                        </button>
+                    </div>
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Vết bẩn">
+                            <i class="bi bi-droplet-half"></i> Vết bẩn
+                        </button>
+                    </div>
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Sợi thô">
+                            <i class="bi bi-dash-lg"></i> Sợi thô
+                        </button>
+                    </div>
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Lỗi biên">
+                            <i class="bi bi-layout-sidebar"></i> Lỗi biên
+                        </button>
+                    </div>
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Loang màu">
+                            <i class="bi bi-palette"></i> Loang màu
+                        </button>
+                    </div>
+                    <div class="col-3">
+                        <button class="btn btn-light w-100 error-type-btn error-select-btn" data-type="Khác">
+                            <i class="bi bi-question-circle"></i> Khác
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1055;">
-    <div id="liveToast" class="toast" role="alert"><div class="toast-header"><strong class="me-auto">Thông báo</strong></div><div class="toast-body"></div></div>
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1060;">
+    <div id="liveToast" class="toast align-items-center text-white bg-primary border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body fs-5"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
 </div>
 
 {% endblock %}
@@ -189,9 +361,16 @@
 {{ super() }}
 <script src="{{ url_for('static', filename='js/edit_inspection_ticket.js') }}"></script>
 <script>
-    // Init Virtual Keyboard on Load
     document.addEventListener('DOMContentLoaded', () => {
         if(typeof initVirtualKeyboard === 'function') initVirtualKeyboard('[data-vkb]');
+        
+        // Custom logic to sync radio buttons with hidden select for existing JS compatibility
+        const shiftRadios = document.querySelectorAll('input[name="shift-options"]');
+        shiftRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                document.getElementById('new-worker-shift').value = e.target.value;
+            });
+        });
     });
 </script>
 {% endblock %}
